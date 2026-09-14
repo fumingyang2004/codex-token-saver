@@ -1,0 +1,148 @@
+diff --git a/src/cmds/git/git.rs b/src/cmds/git/git.rs
+index 5169415..52ca7e7 100644
+--- a/src/cmds/git/git.rs
++++ b/src/cmds/git/git.rs
+@@ -203,6 +203,7 @@ fn run_diff(
+ 
+     let raw = format!("{}\n{}", result.stdout, diff_result.stdout);
+     let shown = never_worse(&raw, &printed);
++    crate::core::ces_observer::observe(&diff_result.stdout, shown);
+     println!("{}", shown);
+ 
+     timer.track(
+diff --git a/src/cmds/system/read.rs b/src/cmds/system/read.rs
+index 141d55a..c957bb9 100644
+--- a/src/cmds/system/read.rs
++++ b/src/cmds/system/read.rs
+@@ -74,7 +74,9 @@ pub fn run(
+     } else {
+         (content.clone(), filtered.clone())
+     };
++    crate::core::ces_observer::register(&content, "read.actual-content");
+     let shown = never_worse(&raw, &rtk_output);
++    if line_numbers { crate::core::ces_observer::observe(&content, shown); }
+     print!("{}", shown);
+     timer.track(
+         &format!("cat {}", file.display()),
+@@ -142,7 +144,9 @@ pub fn run_stdin(
+     } else {
+         (content.clone(), filtered.clone())
+     };
++    crate::core::ces_observer::register(&content, "read.actual-content");
+     let shown = never_worse(&raw, &rtk_output);
++    if line_numbers { crate::core::ces_observer::observe(&content, shown); }
+     print!("{}", shown);
+ 
+     timer.track("cat - (stdin)", "rtk read -", &raw, shown);
+diff --git a/src/core/mod.rs b/src/core/mod.rs
+index aaa747e..db8004b 100644
+--- a/src/core/mod.rs
++++ b/src/core/mod.rs
+@@ -13,5 +13,6 @@ pub mod telemetry;
+ pub mod telemetry_cmd;
+ pub mod toml_filter;
+ pub mod tracking;
++pub mod ces_observer;
+ pub mod truncate;
+ pub mod utils;
+diff --git a/src/core/stream.rs b/src/core/stream.rs
+index 43598d7..7473c80 100644
+--- a/src/core/stream.rs
++++ b/src/core/stream.rs
+@@ -406,6 +406,7 @@ pub fn run_streaming(
+                 };
+                 if is_stderr {
+                     if !capped_err {
++                        if raw_stderr.len() + line.len() >= RAW_CAP { super::ces_observer::incomplete(); }
+                         if raw_stderr.len() + line.len() < RAW_CAP {
+                             raw_stderr.push_str(&line);
+                             raw_stderr.push('\n');
+@@ -415,6 +416,7 @@ pub fn run_streaming(
+                         }
+                     }
+                 } else if !capped_out {
++                    if raw_stdout.len() + line.len() >= RAW_CAP { super::ces_observer::incomplete(); }
+                     if raw_stdout.len() + line.len() < RAW_CAP {
+                         raw_stdout.push_str(&line);
+                         raw_stdout.push('\n');
+@@ -456,6 +458,7 @@ pub fn run_streaming(
+             let mut raw_err = String::new();
+             let mut capped = false;
+             for line in read_lines_lossy(stderr) {
++                if raw_err.len() + line.len() >= RAW_CAP { super::ces_observer::incomplete(); }
+                 if raw_err.len() + line.len() < RAW_CAP {
+                     raw_err.push_str(&line);
+                     raw_err.push('\n');
+@@ -475,6 +478,7 @@ pub fn run_streaming(
+                 FilterMode::Streaming(_) => unreachable!("handled by is_streaming branch"),
+                 FilterMode::Buffered(filter_fn) => {
+                     for line in read_lines_lossy(stdout) {
++                        if raw_stdout.len() + line.len() >= RAW_CAP { super::ces_observer::incomplete(); }
+                         if raw_stdout.len() + line.len() < RAW_CAP {
+                             raw_stdout.push_str(&line);
+                             raw_stdout.push('\n');
+@@ -500,6 +504,7 @@ pub fn run_streaming(
+                 }
+                 FilterMode::CaptureOnly => {
+                     for line in read_lines_lossy(stdout) {
++                        if raw_stdout.len() + line.len() >= RAW_CAP { super::ces_observer::incomplete(); }
+                         if raw_stdout.len() + line.len() < RAW_CAP {
+                             raw_stdout.push_str(&line);
+                             raw_stdout.push('\n');
+@@ -544,6 +549,8 @@ pub fn run_streaming(
+         }
+     }
+ 
++    super::ces_observer::capture(&raw_stdout, &raw_stderr, "stream.capture");
++
+     Ok(StreamResult {
+         exit_code,
+         raw,
+@@ -591,11 +598,13 @@ fn capture(cmd: &mut Command) -> Result<CaptureResult> {
+     let program = cmd.get_program().to_string_lossy().into_owned();
+     let output = cmd.output().context("Failed to execute command")?;
+     let exit_code = super::utils::exit_code_from_output(&output, &program);
+-    Ok(CaptureResult {
++    let result = CaptureResult {
+         stdout: super::utils::decode_process_output(&output.stdout),
+         stderr: super::utils::decode_process_output(&output.stderr),
+         exit_code,
+-    })
++    };
++    super::ces_observer::capture(&result.stdout, &result.stderr, "exec_capture");
++    Ok(result)
+ }
+ 
+ #[cfg(test)]
+diff --git a/src/core/tracking.rs b/src/core/tracking.rs
+index e75d40b..fea4ce7 100644
+--- a/src/core/tracking.rs
++++ b/src/core/tracking.rs
+@@ -1727,6 +1727,7 @@ impl TimedExecution {
+     /// timer.track("ls -la", "rtk ls", input, output);
+     /// ```
+     pub fn track(&self, original_cmd: &str, rtk_cmd: &str, input: &str, output: &str) {
++        super::ces_observer::observe(input, output);
+         let elapsed_ms = self.start.elapsed().as_millis() as u64;
+         let input_tokens = estimate_tokens(input);
+         let output_tokens = estimate_tokens(output);
+diff --git a/src/main.rs b/src/main.rs
+index 0423f7f..301d996 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1526,6 +1526,7 @@ fn run_fallback(parse_error: clap::Error) -> Result<i32> {
+                 } else {
+                     stdout_raw.to_string()
+                 };
++                core::ces_observer::register(&combined_raw, "toml.actual-capture");
+                 let success = output.status.success();
+                 let (filtered, loss) =
+                     core::toml_filter::apply_filter_with_info(filter, &combined_raw);
+@@ -1704,6 +1705,7 @@ fn validate_pnpm_filters(filters: &[String], command: &PnpmCommands) -> Option<S
+ }
+ 
+ fn main() {
++    core::ces_observer::initialize();
+     // Reset SIGPIPE to default handler so writing to a closed pipe
+     // e.g `rtk git log | head` exits silently instead of panicking.
+     // Rust ignores SIGPIPE by default and with panic="abort" in the

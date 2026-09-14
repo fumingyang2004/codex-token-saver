@@ -1,0 +1,180 @@
+"""Same-invocation RTK observation; original executable stays the fallback.
+
+The additive Rust observer exposes a selected, provenance-checked real buffer.
+This wrapper independently captures and forwards final stdout/stderr bytes.
+No command is executed again to obtain a baseline.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import queue
+import subprocess
+import sys
+import threading
+import uuid
+
+from .savings import SavingsLedger, best_effort
+from .savings_adapters import current_session
+from .state import safe_path
+
+ASSETS = Path(__file__).parent / "assets/rtk-observer"
+LIMIT = 16 * 1024 * 1024
+
+
+def sha(path):
+    with Path(path).open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def prepare(store, binary):
+    if not store.active("rtk") or os.environ.get("CODEX_SAVER_RTK_OBSERVER") == "0":
+        return None
+    # Redirecting a terminal could change upstream color/interactive behavior.
+    # Codex tool invocations already use pipes; interactive terminals stay native.
+    if sys.stdout.isatty() or sys.stderr.isatty():
+        return None
+    manifest = json.loads((ASSETS / "manifest.json").read_text(encoding="utf-8"))
+    if manifest["platform"] != sys.platform or Path(manifest["binary"]).name != manifest["binary"]:
+        return None
+    executable = ASSETS / manifest["binary"]
+    if (manifest["protocol"] != "ces-rtk-pair-v1" or sha(binary) != manifest["base_binary_sha256"]
+            or sha(executable) != manifest["binary_sha256"]):
+        return None
+    sid = current_session(store)
+    if not sid:
+        return None
+    invocation = uuid.uuid4().hex
+    directory = store.directory / "rtk-observations" / invocation
+    safe_path(directory)
+    directory.mkdir(parents=True, exist_ok=False)
+    return {"executable": executable, "session_id": sid, "invocation": invocation,
+            "path": directory / "pair.jsonl", "binary_sha256": manifest["binary_sha256"]}
+
+
+def cleanup(plan):
+    path = plan["path"]
+    safe_path(path)
+    path.unlink(missing_ok=True)
+    # Delete only the exact empty invocation directory, never recurse.
+    path.parent.rmdir()
+
+
+def collect(stream, destination, result):
+    chunks, size, complete = [], 0, True
+    try:
+        while chunk := stream.read1(65536):
+            size += len(chunk)
+            if size <= LIMIT:
+                chunks.append(chunk)
+            else:
+                complete = False
+                chunks.clear()
+            try:
+                target = getattr(destination, "buffer", None)
+                if target is not None:
+                    target.write(chunk)
+                    target.flush()
+                else:  # Python test/capture streams; native CLI has byte streams.
+                    destination.write(chunk.decode("utf-8", errors="replace"))
+                    destination.flush()
+            except BrokenPipeError:
+                # Propagate downstream closure by closing our upstream read end.
+                # Do not keep consuming output and hide a broken pipe from RTK.
+                complete = False
+                break
+            except Exception:
+                complete = False
+                # Keep draining our child; never replay it after a forwarding error.
+    except Exception:
+        complete = False
+    finally:
+        result.update(data=b"".join(chunks), complete=complete)
+        best_effort(stream.close)
+
+
+def finish(store, plan, pid, code, stdout, stderr):
+    ledger = SavingsLedger(store, plan["session_id"])
+    reason = "raw boundary unavailable (unregistered, unsupported, or observation failed)"
+    recorded = False
+    try:
+        if not stdout["complete"] or not stderr["complete"]:
+            raise ValueError("capture incomplete or over 16 MiB; output still forwarded")
+        if not plan["path"].is_file() or plan["path"].stat().st_size > LIMIT * 3:
+            raise ValueError(reason)
+        records = [json.loads(line) for line in plan["path"].read_text(encoding="utf-8").splitlines()]
+        if len(records) != 1:
+            raise ValueError("ambiguous multiple boundaries; not added against a shared final output")
+        event = records[0]
+        if (event.get("protocol") != "ces-rtk-pair-v1" or event.get("pid") != pid
+                or event.get("invocation_id") != plan["invocation"]):
+            raise ValueError("observation identity mismatch")
+        before, tracked = event["before"], event["tracked_after"]
+        if not isinstance(before, str) or not isinstance(tracked, str):
+            raise ValueError("invalid observed representations")
+        out, err = stdout["data"].decode("utf-8"), stderr["data"].decode("utf-8")
+        if tracked and tracked not in out and tracked not in err:
+            raise ValueError("tracked representation not found in actual emitted output")
+        recorded = bool(ledger.record_observed("rtk", "rtk-pair:" + plan["invocation"], before, out + err,
+            "same RTK invocation: captured input representation -> complete emitted stdout + stderr",
+            source_id=plan["invocation"], metadata={"boundary": event.get("source"), "pid": pid,
+                "exit_code": code, "observer_binary_sha256": plan["binary_sha256"],
+                "stdout_bytes": len(stdout["data"]), "stderr_bytes": len(stderr["data"]),
+                "stdout_sha256": hashlib.sha256(stdout["data"]).hexdigest(),
+                "stderr_sha256": hashlib.sha256(stderr["data"]).hexdigest(),
+                "coverage": "RTK text boundary; decoded input, full UTF-8 emitted output; cross-stream order undefined"}))
+        reason = "observed boundary recorded" if recorded else "duplicate event or ledger write unavailable"
+    except Exception as exc:
+        reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
+    ledger.record_invocation("rtk", "rtk-call:" + plan["invocation"], "guarded RTK process completed",
+        source_id=plan["invocation"], metadata={"exit_code": code, "observed_pair_recorded": recorded,
+                                               "observation_status": reason})
+
+
+def execute(store, args, binary, env):
+    """None means no child was started; every started child returns its own code."""
+    plan = best_effort(prepare, store, binary)
+    if plan is None:
+        return None
+    proc = None
+    jobs, readers = [], []
+    try:
+        child_env = {**env, "CES_RTK_OBSERVATION_FILE": str(plan["path"]),
+                     "CES_RTK_INVOCATION_ID": plan["invocation"]}
+        # Allocate optional forwarding workers before starting the real command.
+        # A thread-resource failure can then safely fall back without replay.
+        def read_job(channel):
+            job = channel.get()
+            if job is not None:
+                collect(*job)
+        try:
+            for _ in range(2):
+                channel = queue.Queue()
+                reader = threading.Thread(target=read_job, args=(channel,))
+                reader.start()
+                jobs.append(channel)
+                readers.append(reader)
+        except Exception:
+            return None
+        try:
+            proc = subprocess.Popen([str(plan["executable"]), *args], cwd=store.project,
+                env=child_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except OSError:
+            return None  # original RTK fallback; command has not run
+        out, err = {}, {}
+        jobs[0].put((proc.stdout, sys.stdout, out))
+        jobs[1].put((proc.stderr, sys.stderr, err))
+        code = proc.wait()
+        for reader in readers:
+            reader.join()
+        best_effort(finish, store, plan, proc.pid, code, out, err)
+        return code
+    finally:
+        if proc is None:
+            for channel in jobs:
+                channel.put(None)
+            for reader in readers:
+                reader.join()
+        best_effort(cleanup, plan)

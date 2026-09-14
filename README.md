@@ -33,7 +33,7 @@ tar -xzf codex-token-saver-v0.1.0-beta.1-linux-x64.tar.gz
 Open a new terminal, or run `source ~/.profile` in the current shell.
 
 Both installers create an isolated venv and install fixed engine versions.
-Python 3.11–3.13 is reused when available; otherwise the installer provisions
+Python 3.12–3.13 is reused when available; otherwise the installer provisions
 Python 3.13.7. Internet access is required. No Node, npm or administrator access.
 Codex CLI must already be installed and authenticated.
 

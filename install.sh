@@ -4,7 +4,7 @@ CTS_BUNDLE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CTS_HOME=${CODEX_SAVER_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/codex-token-saver}
 CTS_PYTHON=''
 for candidate in python3 python; do
-  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(not (3,11)<=sys.version_info[:2]<(3,14))' 2>/dev/null; then CTS_PYTHON=$candidate; break; fi
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(not (3,12)<=sys.version_info[:2]<(3,14))' 2>/dev/null; then CTS_PYTHON=$candidate; break; fi
 done
 if [ -z "$CTS_PYTHON" ]; then
   [ "$(uname -m)" = x86_64 ] || { echo 'Linux x86_64 required'; exit 1; }

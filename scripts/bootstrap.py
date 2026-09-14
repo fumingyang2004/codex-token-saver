@@ -14,8 +14,8 @@ def main():
     p.add_argument('--codex-home',type=Path,default=Path(os.environ.get('CODEX_HOME',Path.home()/'.codex')))
     p.add_argument('--no-path',action='store_true')
     args=p.parse_args()
-    if not (3,11)<=sys.version_info[:2]<(3,14):
-        raise SystemExit('Use Python 3.11–3.13; the installer can provision Python 3.13 automatically.')
+    if not (3,12)<=sys.version_info[:2]<(3,14):
+        raise SystemExit('Use Python 3.12–3.13; the installer can provision Python 3.13 automatically.')
     root=(args.home or (Path(os.environ.get('LOCALAPPDATA',Path.home()/'AppData/Local'))/'CodexTokenSaver' if os.name=='nt' else Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'codex-token-saver')).absolute()
     for part in (root,*root.parents):
         if part.is_symlink() or (hasattr(part,'is_junction') and part.is_junction()):

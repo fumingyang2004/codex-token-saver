@@ -5,7 +5,7 @@ $ctsPython = $null
 foreach ($candidate in @('python','python3')) {
     $found = Get-Command $candidate -ErrorAction SilentlyContinue
     if ($found) {
-        $version = & $found.Source -c 'import sys; print(int((3,11)<=sys.version_info[:2]<(3,14)))' 2>$null
+        $version = & $found.Source -c 'import sys; print(int((3,12)<=sys.version_info[:2]<(3,14)))' 2>$null
         if ($LASTEXITCODE -eq 0 -and $version -eq '1') {$ctsPython = $found.Source; break}
     }
 }

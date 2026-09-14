@@ -5,7 +5,7 @@ Linux x64: run ./install.sh (Ubuntu 22.04+).
 
 Codex CLI must already be installed and authenticated. Network access is needed
 to download pinned Python/engine dependencies and the first local embedding model.
-Python 3.11-3.13 is reused if present; otherwise Python 3.13.7 is provisioned.
+Python 3.12-3.13 is reused if present; otherwise Python 3.13.7 is provisioned.
 No administrator permission or Node installation is required.
 
 Open a new terminal after install. Run Codex normally: codex

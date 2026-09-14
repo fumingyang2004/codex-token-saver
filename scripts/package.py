@@ -26,7 +26,7 @@ def main():
     shutil.copytree(ROOT/'licenses',stage/'licenses')
     for p in stage.glob('*.sh'): p.chmod(0o755)
     # Scan expanded wheels too: archives must not hide developer paths or secrets.
-    forbidden = [str(ROOT).encode().lower(), str(Path.home()).encode().lower(), b'lab0913', b'ff966', b'auth.json']
+    forbidden = [str(ROOT).encode().lower(), str(Path.home()).encode().lower(), b'codex_efficiency', b'auth.json']
     def inspect(name, data):
         for pattern in forbidden:
             if pattern in data.lower() or pattern.decode().encode('utf-16le') in data.lower():

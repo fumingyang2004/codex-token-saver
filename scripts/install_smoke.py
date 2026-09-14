@@ -30,7 +30,7 @@ python=install/('venv/Scripts/python.exe' if os.name=='nt' else 'venv/bin/python
 cli=[str(python),'-m','codex_token_saver','--home',str(install)]
 def run(*args):return subprocess.check_output([*cli,*args],env=env,cwd=area,text=True,encoding='utf-8')
 assert json.loads(run('doctor','--json'))['ready']
-observer=subprocess.check_output([str(python),'-c','from codex_token_saver.dependencies import ASSETS; import json; m=json.loads((ASSETS/"rtk-observer/manifest.json").read_text()); print(ASSETS/"rtk-observer"/m["binary"])'],env=env,text=True).strip()
+observer=subprocess.check_output([str(python),'-c','from codex_token_saver.dependencies import ASSETS; import json; m=json.loads((ASSETS/"rtk-observer/manifest.json").read_text()); print(ASSETS/"rtk-observer"/m["binary"])'],env=env,text=True,encoding='utf-8').strip()
 assert '0.48.0' in subprocess.check_output([observer,'--version'],text=True)
 assert json.loads(run('status','--json'))['status']=='ON'
 url=run('ui','--no-browser').strip().splitlines()[-1]

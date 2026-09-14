@@ -85,6 +85,7 @@ def main():
     target = ASSETS / "rtk-observer"
     target.mkdir(exist_ok=True)
     shutil.copyfile(source / f"target/release/rtk{suffix}", target / f"rtk{suffix}")
+    (target / f"rtk{suffix}").chmod(0o755)
     patch_bytes = subprocess.check_output(["git", "diff", "--no-ext-diff"], cwd=source)
     (target / "source.patch").write_bytes(patch_bytes)
     shutil.copyfile(source / "LICENSE", target / "LICENSE")

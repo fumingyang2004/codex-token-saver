@@ -68,6 +68,13 @@ def setup(store):
         raise StackError("CCE missing: installer must install the pinned engine extra")
     deps = {"codex": detect_codex(), "cce": str(binary), "rtk": original_rtk(store.root/"engines")}
     write_json(store.root/"dependencies.json", deps)
+    info=read_json(ASSETS/"rtk-observer/manifest.json")
+    if Path(info.get("binary", "")).name != info.get("binary"):
+        raise StackError("Invalid packaged RTK observer filename")
+    if os.name != "nt":
+        (ASSETS/"rtk-observer"/info["binary"]).chmod(0o755)
+    if not observer_ready(store):
+        raise StackError("Packaged RTK observer failed integrity/executable checks")
     if not deps["codex"]:
         raise StackError("Codex CLI not found. Install Codex, then rerun the installer.")
     return deps
@@ -94,5 +101,6 @@ def observer_ready(store):
     from .rtk_observation import sha
     info = read_json(ASSETS/"rtk-observer/manifest.json")
     return (info["platform"] == sys.platform and Path(info["binary"]).name == info["binary"]
+            and os.access(ASSETS/"rtk-observer"/info["binary"], os.X_OK)
             and sha(ASSETS/"rtk-observer"/info["binary"]) == info["binary_sha256"]
             and sha(manifest(store)["rtk"]) == info["base_binary_sha256"])

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-token-saver"
+version = "0.1.0b1"
+description = "Observed RTK and CCE token reductions with a live local dashboard"
+requires-python = ">=3.11,<3.14"
+dependencies = ["tomlkit==0.15.1", "psutil==7.0.0"]
+
+[project.optional-dependencies]
+engine = ["code-context-engine[local]==0.4.26"]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+codex-saver = "codex_token_saver.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["app"]
+
+[tool.setuptools.package-data]
+codex_token_saver = ["web/*", "assets/*", "assets/rtk-observer/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["app"]

@@ -1,0 +1,11 @@
+.work/
+.venv/
+dist/
+build/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+app/codex_token_saver/assets/rtk-observer/rtk*
+!app/codex_token_saver/assets/rtk-observer/rtk_observer.rs
+app/codex_token_saver/assets/rtk-observer/manifest.json
+*.pyc

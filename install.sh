@@ -13,7 +13,7 @@ if [ -z "$CTS_PYTHON" ]; then
   printf '%s  %s\n' 741ff1f5742c5a4a25d2f829e8395355e43f7a5ae2ebc6368e9ae2df0efb69cf "$CTS_HOME/runtime/uv.tar.gz" | sha256sum -c -
   tar -xzf "$CTS_HOME/runtime/uv.tar.gz" -C "$CTS_HOME/runtime"
   export UV_PYTHON_INSTALL_DIR="$CTS_HOME/runtime/python" UV_CACHE_DIR="$CTS_HOME/runtime/cache"
-  "$CTS_HOME/runtime/uv-x86_64-unknown-linux-gnu/uv" python install 3.13.7
+  "$CTS_HOME/runtime/uv-x86_64-unknown-linux-gnu/uv" python install --no-bin 3.13.7
   CTS_PYTHON=$("$CTS_HOME/runtime/uv-x86_64-unknown-linux-gnu/uv" python find --managed-python 3.13.7)
 fi
 exec "$CTS_PYTHON" "$CTS_BUNDLE/scripts/bootstrap.py" --home "$CTS_HOME" "$@"

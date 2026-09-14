@@ -19,7 +19,7 @@ if (-not $ctsPython) {
     $env:UV_PYTHON_INSTALL_DIR = Join-Path $runtime 'python'
     $env:UV_CACHE_DIR = Join-Path $runtime 'cache'
     $uv = Join-Path $runtime 'uv\uv.exe'
-    & $uv python install 3.13.7
+    & $uv python install --no-bin --no-registry 3.13.7
     if ($LASTEXITCODE) {throw 'Python provisioning failed'}
     $ctsPython = & $uv python find --managed-python 3.13.7
     if ($LASTEXITCODE) {throw 'Managed Python not found'}

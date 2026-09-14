@@ -57,6 +57,7 @@ override. Normal installers never grant hook trust; users review `/hooks` once.
 
 This is a functional acceptance fixture, not a savings benchmark. First CCE model
 download/indexing needs network/time. Linux native model usage and fresh machines
-with no Python installed were not exercised locally; the pinned runtime fallback
-is separate from the tested existing-Python installer path. Managed policies,
+were not exercised locally. On Windows, removing Python from PATH exercised
+the automatic Python 3.13.7 provisioning branch. The installer suppresses uv
+global executable and registry installation. Managed policies,
 IDE integration, subagents and unsupported CLI versions can prevent hooks.

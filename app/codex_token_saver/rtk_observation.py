@@ -18,10 +18,15 @@ import uuid
 
 from .savings import SavingsLedger, best_effort
 from .savings_adapters import current_session
-from .state import safe_path
+from .state import safe_path, write_json
+from .rtk_spool import measurement_store
 
 ASSETS = Path(__file__).parent / "assets/rtk-observer"
 LIMIT = 16 * 1024 * 1024
+
+
+class ObservationUnavailable(ValueError):
+    pass
 
 
 def sha(path):
@@ -31,21 +36,21 @@ def sha(path):
 
 def prepare(store, binary):
     if not store.active("rtk") or os.environ.get("CODEX_SAVER_RTK_OBSERVER") == "0":
-        return None
+        raise ObservationUnavailable("RTK observation disabled")
     # Redirecting a terminal could change upstream color/interactive behavior.
     # Codex tool invocations already use pipes; interactive terminals stay native.
     if sys.stdout.isatty() or sys.stderr.isatty():
-        return None
+        raise ObservationUnavailable("Interactive terminal capture unsupported")
     manifest = json.loads((ASSETS / "manifest.json").read_text(encoding="utf-8"))
     if manifest["platform"] != sys.platform or Path(manifest["binary"]).name != manifest["binary"]:
-        return None
+        raise ObservationUnavailable("RTK observer platform mismatch")
     executable = ASSETS / manifest["binary"]
     if (manifest["protocol"] != "ces-rtk-pair-v1" or sha(binary) != manifest["base_binary_sha256"]
             or sha(executable) != manifest["binary_sha256"]):
-        return None
+        raise ObservationUnavailable("RTK observer integrity check failed")
     sid = current_session(store)
     if not sid:
-        return None
+        raise ObservationUnavailable("Exact native session unavailable")
     invocation = uuid.uuid4().hex
     directory = store.directory / "rtk-observations" / invocation
     safe_path(directory)
@@ -115,7 +120,11 @@ def finish(store, plan, pid, code, stdout, stderr):
         if not isinstance(before, str) or not isinstance(tracked, str):
             raise ValueError("invalid observed representations")
         out, err = stdout["data"].decode("utf-8"), stderr["data"].decode("utf-8")
-        if tracked and tracked not in out and tracked not in err:
+        # RTK's git --stat passthrough prints stdout.trim(), while its tracker
+        # retains the untrimmed buffer. Admit only this exact whitespace change;
+        # token counts still use the complete, unmodified emitted bytes.
+        if (tracked and tracked not in out and tracked not in err
+                and tracked.strip() != out.strip() and tracked.strip() != err.strip()):
             raise ValueError("tracked representation not found in actual emitted output")
         recorded = bool(ledger.record_observed("rtk", "rtk-pair:" + plan["invocation"], before, out + err,
             "same RTK invocation: captured input representation -> complete emitted stdout + stderr",
@@ -135,8 +144,18 @@ def finish(store, plan, pid, code, stdout, stderr):
 
 def execute(store, args, binary, env):
     """None means no child was started; every started child returns its own code."""
-    plan = best_effort(prepare, store, binary)
-    if plan is None:
+    store = measurement_store(store)
+    def unavailable(reason):
+        if getattr(store, "rtk_spool", None):
+            nonce = uuid.uuid4().hex
+            SavingsLedger(store, store.session_id).record_invocation("rtk", "rtk-call:" + nonce,
+                "RTK observation unavailable; original RTK fallback",
+                metadata={"observed_pair_recorded": False, "observation_status": reason})
+            best_effort(write_json, store.directory / "complete.json", {"session_id": store.session_id})
+    try:
+        plan = prepare(store, binary)
+    except Exception as exc:
+        best_effort(unavailable, str(exc) if isinstance(exc, ObservationUnavailable) else type(exc).__name__)
         return None
     proc = None
     jobs, readers = [], []
@@ -157,11 +176,13 @@ def execute(store, args, binary, env):
                 jobs.append(channel)
                 readers.append(reader)
         except Exception:
+            best_effort(unavailable, "Capture worker unavailable")
             return None
         try:
             proc = subprocess.Popen([str(plan["executable"]), *args], cwd=getattr(store, "command_cwd", store.project),
                 env=child_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except OSError:
+            best_effort(unavailable, "Observer process unavailable")
             return None  # original RTK fallback; command has not run
         out, err = {}, {}
         jobs[0].put((proc.stdout, sys.stdout, out))
@@ -178,3 +199,5 @@ def execute(store, args, binary, env):
             for reader in readers:
                 reader.join()
         best_effort(cleanup, plan)
+        if proc is not None and getattr(store, "rtk_spool", None):
+            best_effort(write_json, store.directory / "complete.json", {"session_id": plan["session_id"]})

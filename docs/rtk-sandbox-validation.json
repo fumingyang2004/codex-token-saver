@@ -1,0 +1,41 @@
+{
+  "session_id": "01a09fcc-cd23-7d70-88c1-217253cb3b83",
+  "sandbox": "workspace-write",
+  "cli_api_equal": true,
+  "rtk": {
+    "saved": 5,
+    "events": 3,
+    "invocations": 4,
+    "unobserved": 1,
+    "observation_status": "raw boundary unavailable (unregistered, unsupported, or observation failed)"
+  },
+  "events": [
+    {
+      "event_id": "rtk-pair:8e9121d689454cb49a45ed5a3957fefc",
+      "component": "rtk",
+      "timestamp": 1789387414.8046591,
+      "before_tokens": 15,
+      "after_tokens": 14,
+      "delta_tokens": 1,
+      "reason": "same RTK invocation: captured input representation -> complete emitted stdout + stderr"
+    },
+    {
+      "event_id": "rtk-pair:c1954fa5086f4ab48c5004725c3054ae",
+      "component": "rtk",
+      "timestamp": 1789387419.6694746,
+      "before_tokens": 93,
+      "after_tokens": 89,
+      "delta_tokens": 4,
+      "reason": "same RTK invocation: captured input representation -> complete emitted stdout + stderr"
+    },
+    {
+      "event_id": "rtk-pair:dea92b4768974b0cb234c8bfebcf18e9",
+      "component": "rtk",
+      "timestamp": 1789387409.075797,
+      "before_tokens": 4,
+      "after_tokens": 4,
+      "delta_tokens": 0,
+      "reason": "same RTK invocation: captured input representation -> complete emitted stdout + stderr"
+    }
+  ]
+}

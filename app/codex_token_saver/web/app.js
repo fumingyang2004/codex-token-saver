@@ -17,6 +17,10 @@ function render(value) {
     const item = summary?.components[c];
     $(c).textContent = item ? num(item.saved) : '—';
     $(c+'Events').textContent = item?.events ? item.events+' observed event'+(item.events===1?'':'s') : 'No observations yet';
+    if (c === 'rtk' && item?.invocations) {
+      $(c+'Events').textContent = item.invocations+' calls · '+item.events+' measured'+
+        (item.unobserved ? ' · '+item.unobserved+' unmeasured · latest: '+item.observation_status : '');
+    }
     // Visual proportion only; displayed accounting values always come from API.
     const other = summary?.components[c==='rtk'?'cce':'rtk']?.saved || 0;
     $(c+'Bar').style.width = item?.saved > 0 ? Math.max(0,item.saved)/(Math.max(0,item.saved)+Math.max(0,other))*100+'%' : '0%';

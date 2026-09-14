@@ -99,6 +99,13 @@ def summarize(events):
         and e["before_tokens"] >= 0 and e["after_tokens"] >= 0
         and e.get("delta_tokens") == e["before_tokens"]-e["after_tokens"] and e.get("counting_method") == METHOD]
     groups = {c: [e for e in accepted if e["component"] == c] for c in COMPONENTS}
+    calls = {c: [e for e in unique.values() if e["component"] == c and e.get("kind") == "invocation"] for c in COMPONENTS}
+    def component(c, es):
+        missing = [e for e in calls[c] if e.get("metadata", {}).get("observed_pair_recorded") is False]
+        latest = max(missing, key=lambda e: e["timestamp"]) if missing else None
+        return {"saved": sum(e["delta_tokens"] for e in es) if es else None, "events": len(es),
+                "invocations": len(calls[c]), "unobserved": len(missing),
+                "observation_status": latest["metadata"].get("observation_status") if latest else None}
     return {"observed_net_avoided_tokens": sum(e["delta_tokens"] for e in accepted) if accepted else None,
-        "components": {c: {"saved": sum(e["delta_tokens"] for e in es) if es else None, "events": len(es)} for c, es in groups.items()},
+        "components": {c: component(c, es) for c, es in groups.items()},
         "events": accepted, "counting_method": METHOD}

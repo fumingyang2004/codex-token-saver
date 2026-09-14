@@ -30,7 +30,7 @@ def main():
     previous_info=json.loads(receipt.read_text()) if receipt.exists() else {}
     if previous_info and (previous_info.get('product')!='codex-token-saver' or Path(previous_info.get('home','')).resolve()!=root):
         raise SystemExit('Installation receipt does not own this directory')
-    info={**previous_info,'product':'codex-token-saver','home':str(root),'codex_home':str(args.codex_home.resolve()),'path_added':previous_info.get('path_added',False) or not args.no_path,'uninstalled':False,'version':'0.1.0-beta.1'}
+    info={**previous_info,'product':'codex-token-saver','home':str(root),'codex_home':str(args.codex_home.resolve()),'path_added':previous_info.get('path_added',False) or not args.no_path,'uninstalled':False,'version':'0.1.0-beta.2'}
     receipt.write_text(json.dumps(info,indent=2),encoding='utf-8')
     venv=root/'venv'
     if not venv.exists(): subprocess.run([sys.executable,'-m','venv',str(venv)],check=True)
@@ -70,7 +70,7 @@ def main():
                     profile.write_text(before+block)
                     info['profile_blocks'][name]=block
     receipt.write_text(json.dumps(info,indent=2),encoding='utf-8')
-    print('\nCodex Token Saver v0.1.0-beta.1\n[OK] Codex detected\n[OK] RTK ready\n[OK] CCE ready\n[OK] Savings telemetry ready\n[OK] Configuration installed\nStatus: ON\n\nRun Codex normally: codex\nOpen dashboard: codex-saver ui\nReview the installed hooks at first Codex launch. Open a new terminal if PATH has not refreshed.')
+    print('\nCodex Token Saver v0.1.0-beta.2\n[OK] Codex detected\n[OK] RTK ready\n[OK] CCE ready\n[OK] Savings telemetry ready\n[OK] Configuration installed\nStatus: ON\n\nRun Codex normally: codex\nOpen dashboard: codex-saver ui\nReview the installed hooks at first Codex launch. Open a new terminal if PATH has not refreshed.')
 
 
 if __name__=='__main__': main()

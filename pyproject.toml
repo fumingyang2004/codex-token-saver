@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codex-token-saver"
-version = "0.1.0b1"
+version = "0.1.0b2"
 description = "Observed RTK and CCE token reductions with a live local dashboard"
 requires-python = ">=3.12,<3.14"
 dependencies = ["tomlkit==0.15.1", "psutil==7.0.0"]

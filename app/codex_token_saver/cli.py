@@ -108,6 +108,10 @@ def main(argv=None):
             store=Store(args.home,context["cwd"],args.codex_home)
             store.command_cwd=Path(context["cwd"]).resolve()
             store.session_id=context["sid"]
+            if context.get("observation_nonce"):
+                from .rtk_spool import attach
+                from .savings import best_effort
+                best_effort(attach, store, context["observation_nonce"])
             return rtk(store,context["args"])
         if args.action == "_setup":
             dependencies.setup(store)

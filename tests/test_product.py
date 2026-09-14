@@ -128,7 +128,23 @@ def test_hook_rewrite_preserves_other_input_and_does_not_execute(store,monkeypat
 
 def test_cli_version():
     p=subprocess.run([sys.executable,'-m','codex_token_saver','version'],capture_output=True,text=True)
-    assert p.returncode==0 and p.stdout.strip()=='Codex Token Saver 0.1.0-beta.1'
+    from codex_token_saver import VERSION
+    assert p.returncode==0 and p.stdout.strip()=='Codex Token Saver '+VERSION
+
+
+@pytest.mark.parametrize('flag', sorted(hooks.PYTEST_DIAGNOSTICS) + ['--debug=pytestdebug.log', '--cache-show=cache/nodeids'])
+def test_pytest_diagnostics_are_not_summarized(store, monkeypatch, flag):
+    control.enable(store); path=native(store)
+    monkeypatch.setattr(sessions, 'codex_parent', lambda: None)
+    value=hooks.handle(store, {'session_id':'session-A','transcript_path':str(path),
+        'cwd':str(store.project),'hook_event_name':'PreToolUse',
+        'tool_input':{'cmd':'pytest '+flag}})
+    assert value == {}
+    assert not (store.directory/'rtk-pending').exists()
+
+
+def test_normal_pytest_still_wraps():
+    assert hooks.arguments('pytest tests/test_example.py -q') == ['pytest','tests/test_example.py','-q']
 
 
 def test_ui_api_single_instance_privacy_and_no_session(store):

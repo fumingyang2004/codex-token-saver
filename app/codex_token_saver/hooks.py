@@ -9,8 +9,15 @@ import sys
 from . import control, sessions
 from .state import Store
 from .savings import SavingsLedger, best_effort
+from .rtk_spool import allocate
 
 GUIDANCE = "For repository discovery, use codex_token_saver_cce context_search. If unavailable or insufficient, use native tools. Verify relevant source before editing."
+
+# These commands request diagnostic/configuration details, not a test summary.
+# RTK's pytest result filter would discard the very information being requested.
+PYTEST_DIAGNOSTICS = {"-h", "--help", "-V", "--version", "--trace-config",
+    "--collect-only", "--co", "--fixtures", "--fixtures-per-test", "--markers",
+    "--debug", "--setup-only", "--setup-plan", "--setup-show", "--cache-show"}
 
 
 def arguments(command):
@@ -26,6 +33,8 @@ def arguments(command):
     if not args:
         return None
     if args[0] == "pytest":
+        if any(arg.split("=", 1)[0] in PYTEST_DIAGNOSTICS for arg in args[1:]):
+            return None
         return args
     if args[0] == "git" and len(args)>1 and args[1] in ("status","diff","log","show"):
         return args
@@ -51,7 +60,11 @@ def handle(store, payload):
         args = arguments(data.get(key))
         if not args:
             return {}
-        context = base64.urlsafe_b64encode(json.dumps({"sid":record["id"], "cwd":str(data.get("workdir") or payload.get("cwd") or project.project), "args":args}).encode()).decode()
+        command_cwd = str(data.get("workdir") or payload.get("cwd") or project.project)
+        command_store = Store(store.root, command_cwd, store.codex_home)
+        nonce = best_effort(allocate, command_store, record["id"])
+        context = base64.urlsafe_b64encode(json.dumps({"sid":record["id"], "cwd":command_cwd, "args":args,
+                                                     "observation_nonce": nonce}).encode()).decode()
         updated = {**data, key: control.shell([*control.prefix(store), "_rtk", "--context", context])}
         return {"hookSpecificOutput": {"hookEventName":event, "permissionDecision":"allow", "updatedInput":updated}}
     if event in ("PostToolUse", "Stop", "SessionEnd"):

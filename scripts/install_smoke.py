@@ -13,7 +13,9 @@ root=Path(__file__).resolve().parents[1]
 area=Path(tempfile.mkdtemp(prefix='saver relocated 中文 '))
 bundle=area/'bundle'; install=area/'install'; codex=area/'codex'; codex.mkdir()
 config=codex/'config.toml'; original=b'# existing user configuration\n';config.write_bytes(original)
-archive=next((root/'dist').glob('*.zip' if os.name=='nt' else '*.tar.gz'))
+version=(root/'VERSION').read_text().strip()
+suffix='windows-x64.zip' if os.name=='nt' else 'linux-x64.tar.gz'
+archive=root/'dist'/f'codex-token-saver-v{version}-{suffix}'
 shutil.unpack_archive(archive,bundle)
 fake=area/'fake';fake.mkdir()
 stub=fake/('codex.cmd' if os.name=='nt' else 'codex')

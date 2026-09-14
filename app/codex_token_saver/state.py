@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import stat
-import tempfile
+import uuid
 
 
 class StackError(Exception):
@@ -49,7 +49,11 @@ def atomic_write(path: Path, data: bytes | None):
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
-    fd, name = tempfile.mkstemp(prefix=".efficiency-", dir=path.parent)
+    # tempfile.mkstemp can retry PermissionError TMP_MAX times on Windows when
+    # os.access incorrectly reports a sandbox-denied directory as writable.
+    # A unique exclusive create fails promptly and preserves fail-open hooks.
+    name = path.parent / (".efficiency-" + uuid.uuid4().hex)
+    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)

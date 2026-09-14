@@ -70,6 +70,8 @@ def snapshot(store, sid=None):
     if selected is None:
         return {"session": None, "sessions": [{k:r[k] for k in ("id","active","last_activity")} for r in rows], "summary": None}
     project = Store(store.root, selected["project"], selected["codex_home"])
+    from .rtk_spool import ingest
+    ingest(project, selected["id"])
     native = read_session(project, selected["id"], selected["rollout"])
     ledger = SavingsLedger(project, selected["id"])
     # Ingest confirmed native CCE observations into the same ledger; browser JS

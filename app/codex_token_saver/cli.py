@@ -58,7 +58,7 @@ def doctor(store):
         version = "unavailable"
         checks["Codex hooks version (0.154+)"] = False
     for label,fn in (
-        ("RTK observer ready",lambda: json.loads((dependencies.ASSETS/"rtk-observer/manifest.json").read_text())["platform"] == sys.platform),
+        ("RTK observer ready",lambda: dependencies.observer_ready(store)),
         ("CCE 0.4.26 available",lambda:importlib.metadata.version("code-context-engine") == dependencies.CCE_VERSION),
         ("Session directory readable",lambda:store.codex_home.is_dir()),
         ("Configuration active",lambda:store.enabled())):
@@ -106,7 +106,7 @@ def main(argv=None):
             from .runtime import rtk
             context=json.loads(base64.urlsafe_b64decode(args.context))
             store=Store(args.home,context["cwd"],args.codex_home)
-            store.project=Path(context["cwd"]).resolve()
+            store.command_cwd=Path(context["cwd"]).resolve()
             store.session_id=context["sid"]
             return rtk(store,context["args"])
         if args.action == "_setup":
@@ -141,6 +141,6 @@ def main(argv=None):
                     for label,ok in item.items(): print(("[OK] " if ok else "[!] ")+label)
                 else: print(f"{key}: {item}")
         return 1 if args.action == "doctor" and not value["ready"] else 0
-    except (StackError,OSError,ValueError) as exc:
+    except (StackError,OSError,ValueError,RuntimeError) as exc:
         print("Codex Token Saver: " + str(exc),file=sys.stderr)
         return 1

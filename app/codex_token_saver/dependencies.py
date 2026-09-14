@@ -88,3 +88,11 @@ def private_env(store):
         raise StackError("Private CCE configuration changed; preserving it")
     atomic_write(config, policy)
     return env
+
+
+def observer_ready(store):
+    from .rtk_observation import sha
+    info = read_json(ASSETS/"rtk-observer/manifest.json")
+    return (info["platform"] == sys.platform and Path(info["binary"]).name == info["binary"]
+            and sha(ASSETS/"rtk-observer"/info["binary"]) == info["binary_sha256"]
+            and sha(manifest(store)["rtk"]) == info["base_binary_sha256"])

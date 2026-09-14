@@ -1,0 +1,100 @@
+{
+  "session_id": "01a09f68-0e10-7051-baa8-2f350b5026bf",
+  "summary": {
+    "observed_net_avoided_tokens": 4837,
+    "components": {
+      "rtk": {
+        "saved": 3804,
+        "events": 1
+      },
+      "cce": {
+        "saved": 1033,
+        "events": 2
+      }
+    },
+    "events": [
+      {
+        "event_id": "cce-pair:312da8ad837249de948a757515065fa1",
+        "component": "cce",
+        "timestamp": 1789380813.2165587,
+        "before_tokens": 1280,
+        "after_tokens": 208,
+        "delta_tokens": 1072,
+        "reason": "same CCE request: returned inline raw chunks -> complete returned text"
+      },
+      {
+        "event_id": "guidance:start:startup",
+        "component": "cce",
+        "timestamp": 1789380796.1193054,
+        "before_tokens": 0,
+        "after_tokens": 39,
+        "delta_tokens": -39,
+        "reason": "CCE discovery guidance emitted by SessionStart (observable overhead)"
+      },
+      {
+        "event_id": "rtk-pair:135a3e9e5eeb46b89cf6038b2474f5d6",
+        "component": "rtk",
+        "timestamp": 1789380803.4736195,
+        "before_tokens": 3809,
+        "after_tokens": 5,
+        "delta_tokens": 3804,
+        "reason": "same RTK invocation: captured input representation -> complete emitted stdout + stderr"
+      }
+    ],
+    "counting_method": "approximate: ceil(UTF-8 bytes / 4), RTK-compatible; not a model tokenizer",
+    "actual_usage": {
+      "input_tokens": 64337,
+      "cached_input_tokens": 59648,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 197,
+      "reasoning_output_tokens": 0,
+      "total_tokens": 64534
+    },
+    "warnings": []
+  },
+  "active_sample": {
+    "timestamp": 1789380850.8398604,
+    "session": {
+      "id": "01a09f61-046e-7860-a73e-6a5fcb948090",
+      "active": true,
+      "last_activity": 1789380394.570559
+    },
+    "summary": {
+      "observed_net_avoided_tokens": 1072,
+      "components": {
+        "rtk": {
+          "saved": null,
+          "events": 0
+        },
+        "cce": {
+          "saved": 1072,
+          "events": 1
+        }
+      },
+      "events": [
+        {
+          "event_id": "cce-pair:a03189065bc7426693f1e2450eac1c15",
+          "component": "cce",
+          "timestamp": 1789380394.6652737,
+          "before_tokens": 1280,
+          "after_tokens": 208,
+          "delta_tokens": 1072,
+          "reason": "same CCE request: returned inline raw chunks -> complete returned text"
+        }
+      ],
+      "counting_method": "approximate: ceil(UTF-8 bytes / 4), RTK-compatible; not a model tokenizer",
+      "actual_usage": {
+        "input_tokens": 76190,
+        "cached_input_tokens": 67584,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 198,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 76388
+      },
+      "warnings": []
+    }
+  },
+  "cli_api_equal": true,
+  "pytest_invocations_this_run": 1,
+  "source": "real native Codex CLI with relocated installed wheel"
+}

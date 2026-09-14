@@ -159,7 +159,7 @@ def execute(store, args, binary, env):
         except Exception:
             return None
         try:
-            proc = subprocess.Popen([str(plan["executable"]), *args], cwd=store.project,
+            proc = subprocess.Popen([str(plan["executable"]), *args], cwd=getattr(store, "command_cwd", store.project),
                 env=child_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except OSError:
             return None  # original RTK fallback; command has not run

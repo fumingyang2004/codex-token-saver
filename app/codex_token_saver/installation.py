@@ -25,10 +25,12 @@ def uninstall(store):
                 remaining=[p for p in previous.split(';') if p.casefold().rstrip('\\')!=str(bindir).casefold()]
                 winreg.SetValueEx(key,'Path',0,kind,';'.join(remaining))
             except FileNotFoundError: pass
-    elif receipt.get('profile_block'):
-        profile=Path.home()/'.profile'
-        if profile.exists(): profile.write_text(profile.read_text().replace(receipt['profile_block'],''))
-    targets=[store.root/name for name in ('venv','runtime','bin')]
+    elif receipt.get('profile_blocks'):
+        for name,block in receipt['profile_blocks'].items():
+            if name not in ('.profile','.bashrc','.zshrc'): continue
+            profile=Path.home()/name
+            if profile.exists(): profile.write_text(profile.read_text().replace(block,''))
+    targets=[store.root/name for name in ('venv','runtime','bin','engines')]
     for target in targets:
         safe_path(target)
         if target.resolve().parent!=store.root.resolve(): raise StackError('Install removal escaped owned directory')

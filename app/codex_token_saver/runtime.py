@@ -27,13 +27,13 @@ def rtk(store, args):
             return observed_code
     try:
         # Inherit tool stdout and exit status. Never replay a command after nonzero exit.
-        code = subprocess.call(command, cwd=store.project, env=env)
+        code = subprocess.call(command, cwd=getattr(store, "command_cwd", store.project), env=env)
         if use_rtk:
             pass
         return code
     except OSError:
         if use_rtk:  # Spawn failed; the native command has not run yet.
-            return subprocess.call(args, cwd=store.project, env=env)
+            return subprocess.call(args, cwd=getattr(store, "command_cwd", store.project), env=env)
         raise
 
 
@@ -53,7 +53,7 @@ def start_cce(store):
     except Exception:
         pass
     proc = subprocess.Popen(command or [binary, "serve", "--project-dir", str(store.project)],
-                            cwd=store.project, env=env, stdin=subprocess.PIPE,
+                            cwd=getattr(store, "command_cwd", store.project), env=env, stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, encoding="utf-8", bufsize=1)
     capture_stderr(proc)

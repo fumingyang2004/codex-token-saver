@@ -33,7 +33,10 @@ def shell(args, windows=None):
 def hook_command(store):
     # Hook commands are shell strings; Codex uses its Windows command runner.
     args = [*prefix(store), "_hook"]
-    return subprocess.list2cmdline(args) if sys.platform == "win32" else shlex.join(args)
+    if sys.platform == "win32":
+        encoded = base64.b64encode((shell(args) + "; exit $LASTEXITCODE").encode("utf-16le")).decode()
+        return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + encoded
+    return shlex.join(args)
 
 
 def enable(store):
@@ -99,12 +102,18 @@ def disable(store):
         if not owned:
             return {"status": "OFF", "conflicts": []}
         conflicts = []
+        # A newly added user hook may now rely on the feature we enabled. Keep
+        # the feature in that case even when config.toml itself is unchanged.
+        current_hooks = read_json(store.codex_home/"hooks.json").get("hooks", {})
+        original_hooks = json.loads(base64.b64decode(owned["before"]["hooks"]) if owned["before"]["hooks"] else b"{}").get("hooks", {})
+        keep_hooks = any(entry != owned["hooks"].get(event) and entry not in original_hooks.get(event, [])
+                         for event, entries in current_hooks.items() for entry in entries)
         for key, name in (("config", "config.toml"), ("hooks", "hooks.json")):
             path = store.codex_home/name
             current = read_bytes(path)
             expected = base64.b64decode(owned["after"][key])
             original = owned["before"][key]
-            if current == expected:
+            if current == expected and not (key == "config" and keep_hooks):
                 atomic_write(path, base64.b64decode(original) if original is not None else None)
                 continue
             if current is None:
@@ -119,7 +128,7 @@ def disable(store):
                             doc.pop("mcp_servers", None)
                     elif MCP_NAME in servers:
                         conflicts.append("Edited owned MCP configuration retained")
-                    if doc.get("features", {}).get("hooks") is True:
+                    if doc.get("features", {}).get("hooks") is True and not keep_hooks:
                         if owned["feature_before"] is None:
                             doc["features"].pop("hooks", None)
                         else:

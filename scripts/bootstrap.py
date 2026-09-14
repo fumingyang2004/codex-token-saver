@@ -16,14 +16,21 @@ def main():
     args=p.parse_args()
     if not (3,11)<=sys.version_info[:2]<(3,14):
         raise SystemExit('Use Python 3.11–3.13; the installer can provision Python 3.13 automatically.')
-    root=(args.home or (Path(os.environ.get('LOCALAPPDATA',Path.home()/'AppData/Local'))/'CodexTokenSaver' if os.name=='nt' else Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'codex-token-saver')).resolve()
+    root=(args.home or (Path(os.environ.get('LOCALAPPDATA',Path.home()/'AppData/Local'))/'CodexTokenSaver' if os.name=='nt' else Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'codex-token-saver')).absolute()
+    for part in (root,*root.parents):
+        if part.is_symlink() or (hasattr(part,'is_junction') and part.is_junction()):
+            raise SystemExit('Refusing redirected install directory')
+    root=root.resolve()
     receipt=root/'install-receipt.json'
     if root.is_symlink() or (hasattr(root,'is_junction') and root.is_junction()):
         raise SystemExit('Refusing redirected install directory')
     if (root/'venv').exists() and not receipt.exists():
         raise SystemExit('Existing venv is not owned by this installer')
     root.mkdir(parents=True,exist_ok=True)
-    info={'product':'codex-token-saver','home':str(root),'codex_home':str(args.codex_home.resolve()),'path_added':not args.no_path,'version':'0.1.0-beta.1'}
+    previous_info=json.loads(receipt.read_text()) if receipt.exists() else {}
+    if previous_info and (previous_info.get('product')!='codex-token-saver' or Path(previous_info.get('home','')).resolve()!=root):
+        raise SystemExit('Installation receipt does not own this directory')
+    info={**previous_info,'product':'codex-token-saver','home':str(root),'codex_home':str(args.codex_home.resolve()),'path_added':not args.no_path,'version':'0.1.0-beta.1'}
     receipt.write_text(json.dumps(info,indent=2),encoding='utf-8')
     venv=root/'venv'
     if not venv.exists(): subprocess.run([sys.executable,'-m','venv',str(venv)],check=True)
@@ -53,12 +60,15 @@ def main():
         script.chmod(0o755)
         if not args.no_path:
             import shlex
-            profile=Path.home()/'.profile'
-            before=profile.read_text() if profile.exists() else ''
             block='\n# >>> codex-token-saver >>>\nexport PATH='+shlex.quote(str(bindir))+':"$PATH"\n# <<< codex-token-saver <<<\n'
-            if '# >>> codex-token-saver >>>' not in before:
-                profile.write_text(before+block)
-                info['profile_block']=block
+            info.setdefault('profile_blocks',{})
+            for name in ('.profile','.bashrc','.zshrc'):
+                profile=Path.home()/name
+                if name=='.zshrc' and not profile.exists(): continue
+                before=profile.read_text() if profile.exists() else ''
+                if '# >>> codex-token-saver >>>' not in before:
+                    profile.write_text(before+block)
+                    info['profile_blocks'][name]=block
     receipt.write_text(json.dumps(info,indent=2),encoding='utf-8')
     print('\nCodex Token Saver v0.1.0-beta.1\n[OK] Codex detected\n[OK] RTK ready\n[OK] CCE ready\n[OK] Savings telemetry ready\n[OK] Configuration installed\nStatus: ON\n\nRun Codex normally: codex\nOpen dashboard: codex-saver ui\nReview the installed hooks at first Codex launch. Open a new terminal if PATH has not refreshed.')
 

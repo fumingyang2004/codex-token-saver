@@ -50,6 +50,16 @@ def test_conflicting_owned_mcp_is_preserved(store):
     assert not store.enabled()
 
 
+def test_new_user_hooks_keep_required_feature_enabled(store):
+    control.enable(store)
+    path=store.codex_home/'hooks.json';value=json.loads(path.read_text())
+    own={'hooks':[{'type':'command','command':'echo new user hook'}]}
+    value['hooks']['Stop'].append(own);path.write_text(json.dumps(value))
+    assert not control.disable(store)['conflicts']
+    assert own in json.loads(path.read_text())['hooks']['Stop']
+    assert 'hooks = true' in (store.codex_home/'config.toml').read_text()
+
+
 def test_ledger_aggregation_negative_duplicate_and_isolation(store):
     control.enable(store)
     a=savings.SavingsLedger(store,'A'); b=savings.SavingsLedger(store,'B')
@@ -62,6 +72,31 @@ def test_ledger_aggregation_negative_duplicate_and_isolation(store):
     control.disable(store)
     assert not a.record_observed('rtk','off','a'*40,'','off')
     assert a.summary()['observed_net_avoided_tokens']==96
+
+
+def test_cce_native_pair_requires_delivered_nonce_and_identical_body(store):
+    from codex_token_saver import cce_observation as cce
+    from mcp.types import TextContent
+    control.enable(store)
+    directory=store.directory/'cce-observations';directory.mkdir(parents=True)
+    result=cce.wrap_result([TextContent(type='text',text='compressed code + metadata')], [('chunk','raw '*300,'compressed code')], directory)
+    response={'id':8,'result':{'content':[result[0].model_dump(by_alias=True,exclude_none=True)]}}
+    item={'id':'native-item','tool':'context_search','result':response['result'],'status':'completed'}
+    assert cce.native_event(store,'A',item,0) is None
+    cce.delivered(store,response)
+    event=cce.native_event(store,'A',item,0)
+    assert event['delta_tokens']>0 and event['before_tokens']-event['after_tokens']==event['delta_tokens']
+    item['result']['content'][0]['text']+=' changed after delivery'
+    assert cce.native_event(store,'A',item,0) is None
+
+
+def test_windows_hook_command_survives_spaces_and_unicode(store):
+    import base64
+    if os.name!='nt':pytest.skip('Windows command runner')
+    command=control.hook_command(store)
+    assert command.startswith('powershell.exe -NoProfile -NonInteractive -EncodedCommand ')
+    script=base64.b64decode(command.split()[-1]).decode('utf-16le')
+    assert str(store.root) in script and '_hook' in script
 
 
 def test_registry_active_previous_and_no_session(store,monkeypatch):

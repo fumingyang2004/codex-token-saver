@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,10 +15,8 @@ def main():
     version = (ROOT/'VERSION').read_text().strip()
     platform = 'windows-x64' if sys.platform == 'win32' else 'linux-x64'
     name = f'codex-token-saver-v{version}-{platform}'
-    stage = ROOT/'.work'/name
-    if stage.exists():
-        raise SystemExit('Existing packaging stage: choose a clean build workspace')
-    stage.mkdir(parents=True)
+    (ROOT/'.work').mkdir(exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=name+'-',dir=ROOT/'.work'))
     wheels = stage/'wheels'; wheels.mkdir()
     subprocess.run([sys.executable,'-m','pip','wheel','--no-deps','--wheel-dir',str(wheels),str(ROOT)],check=True)
     for file in ('install.ps1','install.sh','uninstall.ps1','uninstall.sh','README.txt','VERSION','requirements.lock','THIRD_PARTY_NOTICES.md'):

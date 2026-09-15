@@ -126,6 +126,13 @@ def read_session(store, sid, explicit=None):
                         from .cce_observation import native_event
                         from .savings import best_effort
                         observed = best_effort(native_event, store, sid, item, event.get("timestamp"))
+                        failed = item.get("status", "").lower() != "completed" or bool((item.get("result") or {}).get("isError"))
+                        timed_out = "timed out" in str(item.get("error") or item.get("result", {})).lower()
+                        approval = "approval" in str(item.get("error", {})).lower()
+                        result["events"][-1]["metadata"].update(
+                            observed_pair_recorded=bool(observed), failed=failed, timed_out=timed_out,
+                            observation_status=("approval required or rejected" if approval else "timeout" if timed_out else "failed" if failed else
+                                "measured" if observed else "completed without a measured retrieval result"))
                         if observed:
                             result["events"].append(observed)
                 if event.get("type") != "event_msg" or payload.get("type") != "token_count":

@@ -40,8 +40,10 @@ def parser():
 def status(store):
     deps = dependencies.manifest(store)
     return {"name":"Codex Token Saver", "version":VERSION, "status":"ON" if store.enabled() else "OFF",
-        "rtk":"ready" if Path(deps.get("rtk", "missing")).is_file() else "unavailable",
-        "cce":"ready" if Path(deps.get("cce", "missing")).is_file() else "unavailable",
+        "rtk":"installed" if Path(deps.get("rtk", "missing")).is_file() else "unavailable",
+        "cce":"installed" if Path(deps.get("cce", "missing")).is_file() else "unavailable",
+        "cce_last_project_health":read_json(store.directory / "cce-health.json"),
+        "runtime_note":"Installed does not mean functional. See the selected session's calls, failures and measurements.",
         "telemetry":"Approximate", "codex_detected":bool(deps.get("codex") or dependencies.detect_codex())}
 
 
@@ -73,8 +75,11 @@ def doctor(store):
         with socket.socket() as s: s.bind(("127.0.0.1",0))
         checks["UI port available"] = True
     except OSError: checks["UI port available"] = False
-    return {"ready":all(checks.values()),"checks":checks,"codex_version":version,
-        "note":"Review the installed hooks in Codex at first launch. Native hook trust is not bypassed by the installer."}
+    health = read_json(store.directory / "cce-health.json")
+    return {"installation_ready":all(checks.values()),"checks":checks,"codex_version":version,
+        "scope":"installation checks only; no end-to-end readiness claim",
+        "last_project_cce_health":health,
+        "note":"Project health can belong to another process. Inspect the selected session's actual calls; these checks do not execute a search."}
 
 
 def format_savings(value):
@@ -83,10 +88,14 @@ def format_savings(value):
     def num(n): return "unavailable" if n is None else f"{n:,}"
     result=value["summary"]
     lines=["Session " + value["session"]["id"], "Observed tokens avoided  " + num(result["observed_net_avoided_tokens"])]
-    for name,comp in result["components"].items(): lines.append(f"{name.upper():8} {num(comp['saved'])} ({comp['events']} events)")
+    for name,comp in result["components"].items():
+        lines.append(f"{name.upper():8} {num(comp['saved'])} ({comp['invocations']} calls, {comp['failed']} failed, {comp['timed_out']} timed out, {comp['events']} observed events)")
+        if comp['observation_status']:
+            lines.append("         " + comp['observation_status'])
     for key in ("input_tokens","cached_input_tokens","output_tokens","reasoning_output_tokens"):
         lines.append(f"{key:24} {num(result['actual_usage'][key])}")
     lines.append("Token counting: Approximate (UTF-8 bytes / 4, rounded up). Not a billing or ON/OFF estimate.")
+    lines.extend(result.get('warnings', []))
     return "\n".join(lines)
 
 
@@ -105,13 +114,17 @@ def main(argv=None):
         if args.action == "_rtk":
             from .runtime import rtk
             context=json.loads(base64.urlsafe_b64decode(args.context))
-            store=Store(args.home,context["cwd"],args.codex_home)
-            store.command_cwd=Path(context["cwd"]).resolve()
+            store=Store(args.home,context.get("project") or context.get("cwd"),args.codex_home)
+            store.command_cwd=Path.cwd().resolve()
             store.session_id=context["sid"]
             if context.get("observation_nonce"):
                 from .rtk_spool import attach
                 from .savings import best_effort
                 best_effort(attach, store, context["observation_nonce"])
+                if getattr(store, "rtk_spool", None):
+                    from .state import write_json
+                    best_effort(write_json, store.rtk_spool / "started.json",
+                        {"session_id": store.session_id, "pid": os.getpid(), "cwd": str(store.command_cwd)})
             return rtk(store,context["args"])
         if args.action == "_setup":
             dependencies.setup(store)
@@ -144,7 +157,7 @@ def main(argv=None):
                 if key == "checks":
                     for label,ok in item.items(): print(("[OK] " if ok else "[!] ")+label)
                 else: print(f"{key}: {item}")
-        return 1 if args.action == "doctor" and not value["ready"] else 0
+        return 1 if args.action == "doctor" and not value["installation_ready"] else 0
     except (StackError,OSError,ValueError,RuntimeError) as exc:
         print("Codex Token Saver: " + str(exc),file=sys.stderr)
         return 1

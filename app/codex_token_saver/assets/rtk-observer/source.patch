@@ -1,15 +1,169 @@
 diff --git a/src/cmds/git/git.rs b/src/cmds/git/git.rs
-index 5169415..52ca7e7 100644
+index 5169415..451bd5b 100644
 --- a/src/cmds/git/git.rs
 +++ b/src/cmds/git/git.rs
-@@ -203,6 +203,7 @@ fn run_diff(
+@@ -109,6 +109,10 @@ pub fn run(
+     }
+ }
  
-     let raw = format!("{}\n{}", result.stdout, diff_result.stdout);
++// Replacement for pinned RTK 0.48.0 run_diff. Keep Git's exit status and both
++// output streams, including code 1 (differences) outside a Git repository.
++// Replacement for pinned RTK 0.48.0 run_diff. Keep Git's exit status and both
++// output streams, including code 1 (differences) outside a Git repository.
+ fn run_diff(
+     args: &[String],
+     max_lines: Option<usize>,
+@@ -116,105 +120,65 @@ fn run_diff(
+     global_args: &[String],
+ ) -> Result<i32> {
+     let timer = tracking::TimedExecution::start();
+-
+-    // Re-insert `--` when clap's trailing_var_arg consumed it (issue #1215)
+     let args = &args_utils::restore_double_dash(args);
+-
+-    // Check if user wants stat output
+-    let wants_stat = args
+-        .iter()
+-        .any(|arg| arg == "--stat" || arg == "--numstat" || arg == "--shortstat");
+-
+-    // Check if user wants compact diff (default RTK behavior)
+-    let wants_compact = !args.iter().any(|arg| arg == "--no-compact") && !emits_word_diff(args);
+-
+-    if wants_stat || !wants_compact {
+-        // User wants stat or explicitly no compacting - pass through directly
++    let wants_stat = args.iter().any(|a| matches!(a.as_str(), "--stat" | "--numstat" | "--shortstat"));
++    let compact = !args.iter().any(|a| a == "--no-compact") && !emits_word_diff(args);
++    // --check reports whitespace errors; --quiet suppresses output deliberately.
++    let diagnostic = args.iter().any(|a| matches!(a.as_str(), "--check" | "--quiet"));
++    let observe = |result: &CaptureResult, shown: &str| {
++        let raw = format!("{}{}", result.stdout, result.stderr);
++        crate::core::ces_observer::register(&raw, "git.diff.actual-capture");
++        crate::core::ces_observer::observe(&raw, shown);
++    };
++    let run = |stat: bool| -> Result<CaptureResult> {
+         let mut cmd = git_cmd(global_args);
+         cmd.arg("diff");
++        if stat { cmd.arg("--stat"); }
+         for arg in args {
+-            if arg == "--no-compact" {
+-                continue; // RTK flag, not a git flag
+-            }
+-            cmd.arg(arg);
+-        }
+-
+-        let result = exec_capture(&mut cmd).context("Failed to run git diff")?;
+-
+-        if !result.success() {
+-            eprintln!("{}", result.stderr);
+-            return Ok(result.exit_code);
+-        }
+-
+-        println!("{}", result.stdout.trim());
+-
+-        timer.track(
+-            &format!("git diff {}", args.join(" ")),
+-            &format!("rtk git diff {} (passthrough)", args.join(" ")),
+-            &result.stdout,
+-            &result.stdout,
+-        );
+-
+-        return Ok(0);
+-    }
+-
+-    // Default RTK behavior: stat first, then compacted diff
+-    let mut cmd = git_cmd(global_args);
+-    cmd.arg("diff").arg("--stat");
+-
+-    for arg in args {
+-        cmd.arg(arg);
+-    }
+-
+-    let result = exec_capture(&mut cmd).context("Failed to run git diff")?;
+-
+-    if !result.success() {
+-        if !result.stderr.trim().is_empty() {
+-            eprint!("{}", result.stderr);
++            if arg != "--no-compact" { cmd.arg(arg); }
+         }
+-        timer.track(
+-            &format!("git diff {}", args.join(" ")),
+-            &format!("rtk git diff {}", args.join(" ")),
+-            &result.stdout,
+-            &result.stdout,
+-        );
++        exec_capture(&mut cmd).context("Failed to run git diff")
++    };
++    if wants_stat || !compact || diagnostic {
++        let result = run(false)?;
++        print!("{}", result.stdout);
++        eprint!("{}", result.stderr);
++        observe(&result, &result.stdout);
++        timer.track("git diff (passthrough)", "rtk git diff (passthrough)", &result.stdout, &result.stdout);
+         return Ok(result.exit_code);
+     }
+-
+-    if verbose > 0 {
+-        eprintln!("Git diff summary:");
+-    }
+-
+-    // Now get actual diff but compact it
+-    let mut diff_cmd = git_cmd(global_args);
+-    diff_cmd.arg("diff");
+-    for arg in args {
+-        diff_cmd.arg(arg);
++    let usable = |r: &CaptureResult| r.exit_code == 0 || (r.exit_code == 1 &&
++        r.stderr.lines().all(|l| l.trim().is_empty() || l.starts_with("warning:")));
++    let stat = run(true)?;
++    if !usable(&stat) {
++        print!("{}", stat.stdout);
++        eprint!("{}", stat.stderr);
++        observe(&stat, &stat.stdout);
++        return Ok(stat.exit_code);
++    }
++    if verbose > 0 { eprintln!("Git diff summary:"); }
++    let result = run(false)?;
++    if !usable(&result) {
++        print!("{}", result.stdout);
++        eprint!("{}", result.stderr);
++        observe(&result, &result.stdout);
++        return Ok(result.exit_code);
+     }
+-
+-    let diff_result = exec_capture(&mut diff_cmd).context("Failed to run git diff")?;
+-
+-    let printed = if !diff_result.stdout.is_empty() {
+-        let compacted = compact_diff(&diff_result.stdout, max_lines.unwrap_or(500));
+-        format!("{}\n\nChanges:\n{}", result.stdout.trim(), compacted)
++    let printed = if result.stdout.is_empty() {
++        stat.stdout.trim().to_string()
+     } else {
+-        result.stdout.trim().to_string()
++        format!("{}\n\nChanges:\n{}", stat.stdout.trim(), compact_diff(&result.stdout, max_lines.unwrap_or(500)))
+     };
+-
+-    let raw = format!("{}\n{}", result.stdout, diff_result.stdout);
++    let raw = format!("{}\n{}", stat.stdout, result.stdout);
      let shown = never_worse(&raw, &printed);
-+    crate::core::ces_observer::observe(&diff_result.stdout, shown);
      println!("{}", shown);
+-
+-    timer.track(
+-        &format!("git diff {}", args.join(" ")),
+-        &format!("rtk git diff {}", args.join(" ")),
+-        &raw,
+-        shown,
+-    );
+-
+-    Ok(0)
++    eprint!("{}", result.stderr);
++    observe(&result, shown);
++    timer.track("git diff (compact)", "rtk git diff (compact)", &raw, shown);
++    Ok(result.exit_code)
+ }
  
-     timer.track(
++
+ fn run_show(
+     args: &[String],
+     max_lines: Option<usize>,
 diff --git a/src/cmds/system/read.rs b/src/cmds/system/read.rs
 index 141d55a..c957bb9 100644
 --- a/src/cmds/system/read.rs
@@ -115,19 +269,19 @@ index 43598d7..7473c80 100644
  
  #[cfg(test)]
 diff --git a/src/core/tracking.rs b/src/core/tracking.rs
-index e75d40b..fea4ce7 100644
+index e75d40b..00de11b 100644
 --- a/src/core/tracking.rs
 +++ b/src/core/tracking.rs
 @@ -1727,6 +1727,7 @@ impl TimedExecution {
      /// timer.track("ls -la", "rtk ls", input, output);
      /// ```
      pub fn track(&self, original_cmd: &str, rtk_cmd: &str, input: &str, output: &str) {
-+        super::ces_observer::observe(input, output);
++        if !original_cmd.starts_with("git diff ") { super::ces_observer::observe(input, output); }
          let elapsed_ms = self.start.elapsed().as_millis() as u64;
          let input_tokens = estimate_tokens(input);
          let output_tokens = estimate_tokens(output);
 diff --git a/src/main.rs b/src/main.rs
-index 0423f7f..301d996 100644
+index 0423f7f..76813ba 100644
 --- a/src/main.rs
 +++ b/src/main.rs
 @@ -1526,6 +1526,7 @@ fn run_fallback(parse_error: clap::Error) -> Result<i32> {
@@ -146,3 +300,12 @@ index 0423f7f..301d996 100644
      // Reset SIGPIPE to default handler so writing to a closed pipe
      // e.g `rtk git log | head` exits silently instead of panicking.
      // Rust ignores SIGPIPE by default and with panic="abort" in the
+@@ -1768,7 +1770,7 @@ fn run_cli() -> Result<i32> {
+     // Warn if installed hook is outdated/missing (1/day, non-blocking).
+     // Skip for Gain — it shows its own inline hook warning.
+     if !matches!(cli.command, Commands::Gain { .. }) {
+-        hooks::hook_check::maybe_warn();
++        if !core::ces_observer::managed() { hooks::hook_check::maybe_warn(); }
+     }
+ 
+     // Runtime integrity check for operational commands.

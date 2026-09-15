@@ -100,6 +100,16 @@ def collect(stream, destination, result):
         best_effort(stream.close)
 
 
+def outcome(args, code, stderr=b""):
+    options = args[2:args.index("--")] if "--" in args else args[2:]
+    # Git also returns 1 for missing --no-index paths. Accept only empty stderr
+    # or its known warning lines; unknown/localized diagnostics stay failures.
+    warnings_only = all(not line.strip() or line.startswith(b"warning:") for line in stderr.splitlines())
+    differences = (args[:2] == ["git", "diff"] and code == 1 and "--check" not in options and warnings_only)
+    return {"exit_code": code, "failed": code != 0 and not differences,
+            "exit_meaning": "differences" if differences else ("success" if code == 0 else "error")}
+
+
 def finish(store, plan, pid, code, stdout, stderr):
     ledger = SavingsLedger(store, plan["session_id"])
     reason = "raw boundary unavailable (unregistered, unsupported, or observation failed)"
@@ -138,7 +148,7 @@ def finish(store, plan, pid, code, stdout, stderr):
     except Exception as exc:
         reason = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
     ledger.record_invocation("rtk", "rtk-call:" + plan["invocation"], "guarded RTK process completed",
-        source_id=plan["invocation"], metadata={"exit_code": code, "observed_pair_recorded": recorded,
+        source_id=plan["invocation"], metadata={**outcome(plan.get("args", []), code, stderr.get("data", b"")), "observed_pair_recorded": recorded,
                                                "observation_status": reason})
 
 
@@ -149,11 +159,12 @@ def execute(store, args, binary, env):
         if getattr(store, "rtk_spool", None):
             nonce = uuid.uuid4().hex
             SavingsLedger(store, store.session_id).record_invocation("rtk", "rtk-call:" + nonce,
-                "RTK observation unavailable; original RTK fallback",
+                "RTK observation unavailable; native Git fallback" if args[:2] == ["git", "diff"] else "RTK observation unavailable; original RTK fallback",
                 metadata={"observed_pair_recorded": False, "observation_status": reason})
             best_effort(write_json, store.directory / "complete.json", {"session_id": store.session_id})
     try:
         plan = prepare(store, binary)
+        plan["args"] = args
     except Exception as exc:
         best_effort(unavailable, str(exc) if isinstance(exc, ObservationUnavailable) else type(exc).__name__)
         return None

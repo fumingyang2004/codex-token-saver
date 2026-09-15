@@ -17,8 +17,10 @@ function render(value) {
     const item = summary?.components[c];
     $(c).textContent = item ? num(item.saved) : '—';
     $(c+'Events').textContent = item?.events ? item.events+' observed event'+(item.events===1?'':'s') : 'No observations yet';
-    if (c === 'rtk' && item?.invocations) {
+    if (item?.invocations) {
       $(c+'Events').textContent = item.invocations+' calls · '+item.events+' measured'+
+        (item.failed ? ' · '+item.failed+' failed' : '')+
+        (item.timed_out ? ' · '+item.timed_out+' timed out' : '')+
         (item.unobserved ? ' · '+item.unobserved+' unmeasured · latest: '+item.observation_status : '');
     }
     // Visual proportion only; displayed accounting values always come from API.

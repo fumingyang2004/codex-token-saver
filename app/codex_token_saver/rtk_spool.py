@@ -59,6 +59,34 @@ def ingest(store, sid):
         best_effort(_ingest_one, store, sid, path)
 
 
+def pending_status(store, sid, ended=False):
+    remaining = 0
+    for path in (store.directory / "rtk-pending").glob("*.json"):
+        record = best_effort(read_json, path) or {}
+        if record.get("session_id") != sid:
+            continue
+        directory = Path(record.get("directory", ""))
+        # Reclaim only an empty, host-issued spool after session end. Never
+        # remove an executing wrapper's data or infer execution from allocation.
+        if ended and directory.name.startswith("codex-saver-rtk-" + path.stem + "-"):
+            def reclaim():
+                safe_path(directory); safe_path(path)
+                if any(directory.iterdir()):
+                    return False
+                if not SavingsLedger(store, sid)._append('rtk', 'unconfirmed-rewrite:'+path.stem,
+                    'diagnostic', 'Session ended without confirmed execution of the emitted rewrite', historical=True):
+                    # Existing stable record also permits an idempotent cleanup.
+                    if not any(e['event_id'] == 'unconfirmed-rewrite:'+path.stem for e in SavingsLedger(store, sid).events()):
+                        return False
+                directory.rmdir()
+                path.unlink(missing_ok=True)
+                return True
+            if best_effort(reclaim):
+                continue
+        remaining += 1
+    return remaining
+
+
 def _ingest_one(store, sid, path):
     safe_path(path)
     record = read_json(path)
@@ -95,6 +123,7 @@ def _ingest_one(store, sid, path):
     # Concurrent importers may lose this race; stable event IDs prevent doubles.
     database.unlink(missing_ok=True)
     done.unlink(missing_ok=True)
+    (spool.directory / "started.json").unlink(missing_ok=True)
     observations = spool.directory / "rtk-observations"
     if observations.exists():
         safe_path(observations)

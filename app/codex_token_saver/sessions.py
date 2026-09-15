@@ -77,10 +77,18 @@ def snapshot(store, sid=None):
     # Ingest confirmed native CCE observations into the same ledger; browser JS
     # does no accounting. Historical disabled data can still be read.
     for e in native["events"]:
-        if e["component"] == "cce" and e["kind"] == "observed":
-            best_effort(ledger._append, "cce", e["event_id"], "observed", e["reason"], before=e["before_tokens"],
+        if e["component"] == "cce" and e["kind"] in ("observed", "invocation"):
+            best_effort(ledger._append, "cce", e["event_id"], e["kind"], e["reason"], before=e["before_tokens"],
                 after=e["after_tokens"], delta=e["delta_tokens"], source_id=e["source_id"], metadata=e["metadata"], method=e["counting_method"], historical=True)
+    from .rtk_spool import pending_status
+    pending = pending_status(project, selected['id'], selected.get('ended', False))
     summary = ledger.summary()
+    if pending:
+        native['warnings'].append(f"RTK: {pending} rewrite(s) pending or execution unconfirmed; not counted as savings.")
+    summary['components']['rtk']['pending'] = pending
+    unconfirmed = summary['components']['rtk']['unconfirmed_rewrites']
+    if unconfirmed:
+        native['warnings'].append(f"RTK: {unconfirmed} emitted rewrite(s) have no confirmed execution; they may have been rejected or interrupted.")
     # No prompt, source contents, command output or native rollout payloads reach
     # the web API. Even Details only exposes sanitized accounting metadata.
     summary["events"] = [{k:e[k] for k in ("event_id","component","timestamp","before_tokens","after_tokens","delta_tokens","reason")} for e in summary["events"]]

@@ -1,8 +1,11 @@
 # Codex Token Saver
 
+Local RTK/CCE integration repair and validation: [2026-09-15 repair notes](docs/REPAIR-20260915.md).
+CCE startup investigation and real-project timings: [source-first index repair](docs/CCE-STARTUP-20260915.md).
+
 Save Codex context tokens with RTK + CCE, and see the savings live.
 
-[Windows install](#windows) · [Linux install](#linux) · [Beta downloads](https://github.com/fumingyang2004/codex-token-saver/releases/tag/v0.1.0-beta.2)
+[Windows install](#windows) · [Linux install](#linux) · [Beta downloads](https://github.com/fumingyang2004/codex-token-saver/releases/tag/v0.1.0-beta.3)
 
 ![Real Windows Codex session: 4,837 observed tokens avoided](docs/dashboard-windows.png)
 
@@ -26,7 +29,7 @@ Open a new terminal after installation.
 Download the **linux-x64.tar.gz** release (Ubuntu 22.04+, x86_64):
 
 ```sh
-tar -xzf codex-token-saver-v0.1.0-beta.2-linux-x64.tar.gz
+tar -xzf codex-token-saver-v0.1.0-beta.3-linux-x64.tar.gz
 ./install.sh
 ```
 
@@ -90,8 +93,13 @@ For sandboxed commands, PreToolUse allocates a per-command directory in the
 user's temporary directory. The wrapper writes measurements there; host hooks
 and the dashboard import them into the session ledger and remove the completed
 spool. The installation directory does not need to become sandbox-writable.
+See the [Git diff repair and real-directory measurements](docs/RTK-GIT-DIFF-20260915.md).
+
 The RTK card distinguishes calls from measured events and shows the latest
-unmeasured reason. Empty/unsupported capture boundaries remain unknown.
+unmeasured reason. Unsupported capture boundaries remain unknown. Git diff
+preserves both output streams and exit code 1 for differences, including
+`--no-index` comparisons outside a repository. A measured passthrough can save
+exactly zero tokens; an empty observed Git diff is measurable too.
 
 ## Beta boundaries
 

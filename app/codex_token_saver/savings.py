@@ -105,6 +105,10 @@ def summarize(events):
         latest = max(missing, key=lambda e: e["timestamp"]) if missing else None
         return {"saved": sum(e["delta_tokens"] for e in es) if es else None, "events": len(es),
                 "invocations": len(calls[c]), "unobserved": len(missing),
+                "failed": sum(bool(e.get("metadata", {}).get("failed", e.get("metadata", {}).get("exit_code", 0))) for e in calls[c]),
+                "timed_out": sum(bool(e.get("metadata", {}).get("timed_out")) for e in calls[c]),
+                "unconfirmed_rewrites": sum(e['component'] == c and e.get('kind') == 'diagnostic'
+                    and e['event_id'].startswith('unconfirmed-rewrite:') for e in unique.values()),
                 "observation_status": latest["metadata"].get("observation_status") if latest else None}
     return {"observed_net_avoided_tokens": sum(e["delta_tokens"] for e in accepted) if accepted else None,
         "components": {c: component(c, es) for c, es in groups.items()},

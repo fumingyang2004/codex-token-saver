@@ -1,16 +1,15 @@
-﻿Fixes for RTK measurement in sandboxed Codex sessions and preservation of pytest diagnostics.
+RTK now preserves Git diff output outside repositories, and CCE can deliver source results while indexing continues. This prerelease also repairs command-directory handling and separates installation checks, real calls, failures and measured reductions.
 
-- Fix missing RTK measurements under Windows workspace-write: commands collect in per-invocation temporary spools, and host hooks import completed records into the session ledger. No additional sandbox writable roots are required.
-- Avoid repeated Windows permission-error retries during atomic writes.
-- Distinguish RTK calls, measured events and unmeasured results in the dashboard. Missing observations remain unknown.
-- Handle git diff --stat whitespace without dropping an otherwise valid measurement.
-- Leave pytest diagnostic commands such as --trace-config, --collect-only, --fixtures, --help and --version untouched. Their requested diagnostic information must not be reduced to a test-result summary.
-- Select the exact release version during relocated installer validation.
+- **RTK correctness:** preserve stdout, stderr and original Git exit status for --no-index, --exit-code, --stat, quiet and diagnostic comparisons. Code 1 is treated as differences only when diagnostics support it; missing paths and whitespace-check failures remain errors. If the patched observer is unavailable, diff falls back to native Git before execution.
+- **RTK measurement:** measure actual passthrough and empty diff results, include stderr, and avoid treating missing observations as zero. Suppress unrelated Claude Hook hints in managed calls. Passthrough may legitimately save zero tokens.
+- **Directories:** preserve the folder opened in Codex as project identity. RTK executes in the command's actual directory, including subdirectories and external repositories; measurements belong to the originating session.
+- **CCE startup:** cap FastEmbed threads explicitly, use smaller source-first batches, serialize indexing across instances and serve committed chunks during background indexing. Reuse warm indexes and refresh offline edits.
+- **CCE scope:** exclude .work, .test-runtime, **/report_data/** and **/results/**/raw/** by default, with configurable opt-out. User .cceignore rules remain effective. Policy-specific storage preserves old indexes without mixing excluded artifacts into the new index.
+- **CCE transport/accounting:** keep status responsive during indexing, bound calls before the host timeout, discard cancelled/late responses, and credit only observations matched to successful native responses. Failures and unmeasured calls remain visible.
+- **Diagnostics:** distinguish installation readiness from runtime health, add hook decision diagnostics and reclaim empty unconfirmed RTK spools after session end.
 
-Validation: 43 local tests passed. The RTK sandbox fix was also checked in a real Windows Codex CLI workspace-write session: four Git calls, three measured events and one unmeasured empty diff; CLI and dashboard API agreed. Diagnostic bypass is covered by regression tests. Windows/Linux release jobs additionally build, test, package and check relocated installation.
+Validation includes local regression tests, real Git/RTK commands against ordinary directories and repositories, direct CCE MCP checks, and Windows/Linux release jobs that build, test, package and validate relocated installation. Local real-project measurements found a first CCE code response in 9.83 seconds during partial indexing and approximately 5.22 seconds with a prepared warm index. These are single-machine measurements, not guarantees. A real directory diff measured 2565 -> 2550 approximate tokens; --stat measured 166 -> 166.
 
-Counts are approximate observed text reductions, not credits or whole-session billing savings. In beta.1, the large reduction from pytest --trace-config discarded diagnostic information and should not be interpreted as useful savings; existing historical measurements are not rewritten.
+Limits: counts use ceil(UTF-8 bytes / 4) and cover observed output transformations, not credits or whole-session savings. Historical lost outputs are not reconstructed. Native model-session acceptance of every new path is not claimed. Root CLI attribution remains supported; IDE/subagent attribution is not promised. Automatic RTK rewriting still covers simple pytest and Git status/diff/log/show commands; compound expressions pass through. CCE adaptations remain pinned to 0.4.26 and RTK to 0.48.0.
 
-This remains a prerelease for root CLI sessions. IDE/subagent attribution is not promised. Compound commands still pass through. Codex 0.154+ and trusted native hooks are required.
-
-Upgrade: download the archive for your platform, extract it, and rerun its installer using the existing install location. Restart existing Codex sessions and reopen the dashboard with codex-saver ui. Configuration ownership/backups are preserved. The previous v0.1.0-beta.1 release remains available.
+Upgrade: extract your platform archive and rerun its installer using the existing install location. Open a new Codex session to load updated CCE and reopen the dashboard with codex-saver ui. The new index policy may require initial rebuilding; downloaded models are reused. Owned configuration/backups are preserved and prior prereleases remain available.

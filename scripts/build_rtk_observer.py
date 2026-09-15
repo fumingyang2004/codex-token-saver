@@ -1,4 +1,4 @@
-"""Build additive observation against exact RTK 0.48.0; never edit installed RTK."""
+"""Build observation and reviewed Git diff fixes against exact RTK 0.48.0."""
 import os
 import argparse
 import hashlib
@@ -30,6 +30,8 @@ def patch(source):
         raise RuntimeError("Refusing to patch modified source; use a clean isolated checkout")
     shutil.copyfile(ASSETS / "rtk_observer.rs", source / "src/core/ces_observer.rs")
     replace(source, "src/main.rs", "fn main() {", "fn main() {\n    core::ces_observer::initialize();")
+    replace(source, "src/main.rs", "        hooks::hook_check::maybe_warn();",
+            "        if !core::ces_observer::managed() { hooks::hook_check::maybe_warn(); }")
     replace(source, "src/core/mod.rs", "pub mod tracking;", "pub mod tracking;\npub mod ces_observer;")
     replace(source, "src/core/stream.rs", "    Ok(StreamResult {\n        exit_code,",
         '    super::ces_observer::capture(&raw_stdout, &raw_stderr, "stream.capture");\n\n    Ok(StreamResult {\n        exit_code,')
@@ -55,10 +57,12 @@ def patch(source):
     stream_path.write_text(stream_text, encoding="utf-8", newline="\n")
     signature = "    pub fn track(&self, original_cmd: &str, rtk_cmd: &str, input: &str, output: &str) {"
     replace(source, "src/core/tracking.rs", signature,
-            signature + "\n        super::ces_observer::observe(input, output);")
-    old = '    let raw = format!("{}\\n{}", result.stdout, diff_result.stdout);\n    let shown = never_worse(&raw, &printed);'
-    replace(source, "src/cmds/git/git.rs", old,
-            old + '\n    crate::core::ces_observer::observe(&diff_result.stdout, shown);')
+            signature + '\n        if !original_cmd.starts_with("git diff ") { super::ces_observer::observe(input, output); }')
+    git_path = source / "src/cmds/git/git.rs"
+    git_text = git_path.read_text(encoding="utf-8")
+    start, end = git_text.index("fn run_diff("), git_text.index("fn run_show(")
+    git_text = git_text[:start] + (ASSETS / "rtk_git_diff.rs").read_text(encoding="utf-8") + "\n\n" + git_text[end:]
+    git_path.write_text(git_text, encoding="utf-8", newline="\n")
     old = "    let shown = never_worse(&raw, &rtk_output);"
     replace(source, "src/cmds/system/read.rs", old,
             '    crate::core::ces_observer::register(&content, "read.actual-content");\n' + old +
@@ -84,7 +88,8 @@ def main():
     suffix = ".exe" if sys.platform == "win32" else ""
     target = ASSETS / "rtk-observer"
     target.mkdir(exist_ok=True)
-    shutil.copyfile(source / f"target/release/rtk{suffix}", target / f"rtk{suffix}")
+    build_target = Path(env.get("CARGO_TARGET_DIR", source / "target"))
+    shutil.copyfile(build_target / f"release/rtk{suffix}", target / f"rtk{suffix}")
     (target / f"rtk{suffix}").chmod(0o755)
     patch_bytes = subprocess.check_output(["git", "diff", "--no-ext-diff"], cwd=source)
     (target / "source.patch").write_bytes(patch_bytes)
@@ -96,7 +101,8 @@ def main():
         "binary": f"rtk{suffix}", "binary_sha256": sha(target / f"rtk{suffix}"),
         "observer_source_sha256": sha(ASSETS / "rtk_observer.rs"),
         "patch_sha256": sha(target / "source.patch"),
-        "note": "Locally built official source with additive observation; not an unmodified official binary."}
+        "git_diff_source_sha256": sha(ASSETS / "rtk_git_diff.rs"),
+        "note": "Locally built official source with observation and Git diff output/exit-code fixes; not an unmodified official binary."}
     (target / "manifest.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
 

@@ -23,9 +23,8 @@ def project_root(path: Path) -> Path:
     path = canonical(path)
     if not path.is_dir():
         raise StackError(f"Project directory does not exist: {path}")
-    for candidate in (path, *path.parents):
-        if (candidate / ".git").exists():
-            return candidate
+    # The folder opened by this Codex session is authoritative, including a
+    # subfolder inside a larger Git checkout. Never silently widen indexing.
     return path
 
 

@@ -5,9 +5,10 @@ import os
 import re
 import shlex
 import sys
+import time
 
 from . import control, sessions
-from .state import Store
+from .state import Store, write_json
 from .savings import SavingsLedger, best_effort
 from .rtk_spool import allocate
 
@@ -55,19 +56,31 @@ def handle(store, payload):
             "CCE discovery guidance emitted by SessionStart (observable overhead)")
         return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": GUIDANCE}}
     if event == "PreToolUse":
+        started = time.monotonic()
         data = payload.get("tool_input") or {}
         key = "command" if "command" in data else "cmd"
         args = arguments(data.get(key))
+        def audit(decision, **extra):
+            best_effort(write_json, project.directory / "hook-diagnostics" / (record["id"] + ".json"),
+                {"session_id": record["id"], "updated": time.time(), "decision": decision,
+                 "input_keys": sorted(data), "elapsed_ms": round((time.monotonic()-started)*1000), **extra})
         if not args:
+            audit("passthrough: unsupported or diagnostic command")
             return {}
-        command_cwd = str(data.get("workdir") or payload.get("cwd") or project.project)
-        command_store = Store(store.root, command_cwd, store.codex_home)
-        nonce = best_effort(allocate, command_store, record["id"])
-        context = base64.urlsafe_b64encode(json.dumps({"sid":record["id"], "cwd":command_cwd, "args":args,
+        # The host may normalize workdir out of the hook input. The wrapper
+        # inherits the real command cwd; accounting always belongs to this session.
+        nonce = best_effort(allocate, project, record["id"])
+        context = base64.urlsafe_b64encode(json.dumps({"sid":record["id"], "project":str(project.project), "args":args,
                                                      "observation_nonce": nonce}).encode()).decode()
         updated = {**data, key: control.shell([*control.prefix(store), "_rtk", "--context", context])}
+        if os.name == "nt":
+            updated[key] += "; exit $LASTEXITCODE"
+        audit("rewrite emitted; execution not yet confirmed", observation_nonce=nonce)
         return {"hookSpecificOutput": {"hookEventName":event, "permissionDecision":"allow", "updatedInput":updated}}
-    if event in ("PostToolUse", "Stop", "SessionEnd"):
+    if event == "PostToolUse":
+        from .rtk_spool import ingest
+        best_effort(ingest, project, record["id"])
+    if event in ("Stop", "SessionEnd"):
         best_effort(sessions.snapshot, store, record["id"])
     return {}
 

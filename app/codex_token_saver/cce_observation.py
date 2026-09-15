@@ -25,7 +25,7 @@ LIMIT = 16 * 1024 * 1024
 
 def launch(store, binary, env):
     """Use the installed CCE's Python; never mutate its installed source."""
-    if os.environ.get("CODEX_SAVER_CCE_OBSERVER") == "0" or not store.active("cce"):
+    if not store.active("cce"):
         return None
     python = Path(binary).with_name("python.exe" if os.name == "nt" else "python")
     if not python.is_file():
@@ -34,6 +34,7 @@ def launch(store, binary, env):
     safe_path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     env["CES_CCE_OBSERVATION_DIR"] = str(directory)
+    env["CES_CCE_RUNTIME_DIR"] = str(store.directory / "cce-runtime")
     code = "import sys;sys.path.insert(0,sys.argv.pop(1));from codex_token_saver.cce_observation import main;main()"
     return [str(python), "-c", code, str(Path(__file__).resolve().parents[1]), "serve", "--project-dir", str(store.project)]
 
@@ -114,8 +115,12 @@ def install(directory):
 
 def main():
     directory = os.environ.pop("CES_CCE_OBSERVATION_DIR", None)
-    if directory:
+    if directory and os.environ.get("CODEX_SAVER_CCE_OBSERVER") != "0":
         best_effort(install, Path(directory))
+    runtime_directory = os.environ.pop("CES_CCE_RUNTIME_DIR", None)
+    if runtime_directory:
+        from .cce_runtime import install as install_runtime
+        install_runtime(runtime_directory)
     from context_engine.cli import main as cli
     cli()
 
@@ -143,7 +148,24 @@ def delivered(store, response):
         return
     event["request_id"] = response.get("id")
     event["delivered"] = True
+    event["delivery_stage"] = "proxy_forwarded; native session receipt still required"
     write_json(target, event)
+    pending.unlink(missing_ok=True)
+
+
+def discarded(store, response):
+    """Retain counts as explicitly undelivered when a request expired/cancelled."""
+    nonce = nonce_from(response.get("result"))
+    if not nonce:
+        return
+    directory = store.directory / "cce-observations"
+    pending = directory / (nonce + ".pending.json")
+    safe_path(pending)
+    if not pending.is_file():
+        return
+    event = json.loads(pending.read_text(encoding="utf-8"))
+    event.update(delivered=False, delivery_stage="discarded: request no longer pending")
+    write_json(directory / (nonce + ".discarded.json"), event)
     pending.unlink(missing_ok=True)
 
 

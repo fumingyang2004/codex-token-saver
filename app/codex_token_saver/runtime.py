@@ -6,6 +6,8 @@ from pathlib import Path
 from .dependencies import manifest, private_env
 from .state import StackError, write_json, project_root
 
+CCE_REQUEST_TIMEOUT = 45
+
 def rtk(store, args):
     if not args:
         raise StackError("rtk requires an executable and arguments after --")
@@ -25,6 +27,10 @@ def rtk(store, args):
         observed_code = execute(store, args, binary, env) if execute else None
         if observed_code is not None:
             return observed_code
+        if args[:2] == ["git", "diff"]:
+            # Unpatched RTK 0.48.0 drops stdout on exit 1. If the admitted
+            # patched binary is unavailable, preserve output using native Git.
+            command = args
     try:
         # Inherit tool stdout and exit status. Never replay a command after nonzero exit.
         code = subprocess.call(command, cwd=getattr(store, "command_cwd", store.project), env=env)
@@ -82,13 +88,14 @@ def failure_detail(reason, exc=None):
 
 
 def record_cce_failure(store, reason, proc=None, exc=None):
-    evidence = {"ok": False, "detail": failure_detail(reason, exc), "proxy_pid": os.getpid()}
+    evidence = {"ok": False, "detail": failure_detail(reason, exc), "proxy_pid": os.getpid(), "updated": time.time()}
     if proc is not None:
         evidence.update(child_pid=proc.pid, returncode=proc.poll(),
                         stderr_tail="\n".join(list(getattr(proc, "cce_stderr_tail", ())))[-8192:])
     try:
         write_json(store.directory / "cce-last-error.json", evidence)
         write_json(store.directory / "cce-health.json", evidence)
+        write_json(store.directory / "cce-proxies" / (str(os.getpid()) + ".json"), evidence)
     except (OSError, StackError):
         # Diagnostic storage failure must not suppress the MCP fallback response.
         pass
@@ -215,7 +222,7 @@ def mcp_proxy(store):
     restricted = store.read().get("schema", 1) >= 2
     from .control import CCE_TOOLS
     output_lock = threading.Lock()
-    pending = set()
+    pending = {}
     pending_lock = threading.Lock()
     failed = threading.Event()
     def emit(message):
@@ -246,8 +253,17 @@ def mcp_proxy(store):
                 with pending_lock:
                     if "id" in message and "method" not in message:
                         if message["id"] not in pending:
+                            from .cce_observation import discarded
+                            from .savings import best_effort
+                            best_effort(discarded, store, message)
                             continue
-                        pending.remove(message["id"])
+                        request = pending.pop(message["id"])
+                        if request[1] == "tools/call":
+                            from .savings import best_effort
+                            best_effort(write_json, store.directory / "cce-proxies" / (str(os.getpid()) + ".json"),
+                                {"proxy_pid": os.getpid(), "child_pid": child.pid, "updated": time.time(),
+                                 "ok": not bool(message.get("error") or message.get("result", {}).get("isError")),
+                                 "detail": "upstream response forwarded; session receipt requires native result"})
                 if restricted and isinstance(message.get("result"), dict):
                     result = message["result"]
                     if "tools" in result:
@@ -280,6 +296,14 @@ def mcp_proxy(store):
             if failed.is_set() or not store.active("cce"):
                 stop_process(child)
                 return
+            with pending_lock:
+                expired = [ident for ident, (started, method) in pending.items()
+                           if method == "tools/call" and time.monotonic() - started > CCE_REQUEST_TIMEOUT]
+                for ident in expired:
+                    pending.pop(ident)
+            for ident in expired:
+                unavailable({"id": ident, "method": "tools/call"}, "CCE request timed out after 45s")
+                record_cce_failure(store, "CCE request timed out after 45s; late response discarded", child)
     try:
         if store.active("cce") and project_matches:
             try:
@@ -293,6 +317,9 @@ def mcp_proxy(store):
                 message = json.loads(line)
             except ValueError:
                 continue
+            if message.get("method") == "notifications/cancelled":
+                with pending_lock:
+                    pending.pop(message.get("params", {}).get("requestId"), None)
             if not project_matches or not store.active("cce") or failed.is_set() or proc is None or proc.poll() is not None:
                 unavailable(message, "CCE disabled or unavailable")
                 continue
@@ -307,7 +334,7 @@ def mcp_proxy(store):
                         unavailable(message, "CCE disabled or unavailable")
                         continue
                     if "id" in message and "method" in message:
-                        pending.add(message["id"])
+                        pending[message["id"]] = (time.monotonic(), message["method"])
                 proc.stdin.write(json.dumps(message) + "\n")
                 proc.stdin.flush()
             except (OSError, ValueError) as exc:
@@ -315,7 +342,7 @@ def mcp_proxy(store):
                 record_cce_failure(store, "CCE transport failed", proc, exc)
                 with pending_lock:
                     owns_reply = message.get("id") in pending
-                    pending.discard(message.get("id"))
+                    pending.pop(message.get("id"), None)
                 if owns_reply:
                     unavailable(message, "CCE transport failed")
     finally:

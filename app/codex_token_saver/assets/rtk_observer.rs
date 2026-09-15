@@ -26,6 +26,10 @@ pub fn incomplete() {
     if let Some(Some((path, _))) = CONFIG.get() { let _ = std::fs::remove_file(path); }
 }
 
+pub fn managed() -> bool {
+    matches!(CONFIG.get(), Some(Some(_)))
+}
+
 fn enabled() -> bool {
     matches!(CONFIG.get(), Some(Some(_))) && !INCOMPLETE.load(Ordering::Relaxed)
 }
@@ -37,7 +41,7 @@ fn hash(text: &str) -> String {
 /// Register only real buffers at reviewed capture/read boundaries, never token
 /// estimates or reconstructed hypothetical command output.
 pub fn register(text: &str, source: &'static str) {
-    if !enabled() || text.is_empty() || text.len() > LIMIT { return; }
+    if !enabled() || (text.is_empty() && source != "git.diff.actual-capture") || text.len() > LIMIT { return; }
     if let Ok(mut raw) = RAW.lock() {
         if raw.len() < 128 { raw.insert(hash(text), source); }
     }

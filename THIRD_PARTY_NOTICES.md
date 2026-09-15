@@ -2,10 +2,12 @@
 
 - RTK 0.48.0, commit `fde0a8f185945556f51718de0f4c430bb62b3df6`: Apache-2.0.
   Source: https://github.com/rtk-ai/rtk/tree/v0.48.0
-  The archive includes a modified RTK binary with additive observation hooks.
+  The archive includes a modified RTK binary with observation hooks, Git diff
+  output/exit-code fixes, and suppression of Claude hook hints in managed calls.
   The added Rust source, exact patch, provenance manifest and license are in
   `codex_token_saver/assets`. Original RTK is downloaded separately with SHA-256
-  verification and remains the fallback. See `licenses/rtk-Apache-2.0.txt`.
+  verification and remains the fallback for other commands. Git diff falls back
+  to native Git if the patched observer is unavailable. See `licenses/rtk-Apache-2.0.txt`.
 - Code Context Engine 0.4.26: MIT.
   Source: https://github.com/elara-labs/code-context-engine
   Installed from PyPI, with dependencies pinned in `requirements.lock`.

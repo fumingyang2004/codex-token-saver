@@ -1,4 +1,4 @@
-Codex Token Saver v0.1.0-beta.2
+Codex Token Saver v0.1.0-beta.3
 
 Windows x64: run .\install.ps1 in PowerShell.
 Linux x64: run ./install.sh (Ubuntu 22.04+).
